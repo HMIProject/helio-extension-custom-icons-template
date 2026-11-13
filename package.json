@@ -13,7 +13,8 @@
     "test": "vitest",
     "lint": "eslint 'src//**/*.ts?(x)'",
     "build-storybook": "storybook build",
-    "storybook": "storybook dev --port=9001 --ci"
+    "storybook": "storybook dev --port=9001 --ci",
+    "get-name": "echo $npm_package_name"
   },
   "dependencies": {
     "@hmiproject/helio-sdk": "^1.0.0"

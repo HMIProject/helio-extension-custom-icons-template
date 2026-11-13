@@ -1,8 +1,8 @@
 name: build
 on:
-  pull_request:
   push:
-    branches: [main]
+    tags:
+      - 'v*.*.*'
 
 jobs:
   run:
@@ -11,14 +11,13 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
-          # The Chromatic action requires full access to the Git history.
           fetch-depth: 0
 
       # This includes the cache to speed up `npm install` in the step below.
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           cache: npm
           node-version-file: package.json
@@ -26,5 +25,21 @@ jobs:
       - name: Install node_modules
         run: npm install
 
-      - name: Run Build
-        run: npm run build
+      - name: Build Extension
+        run: npm run build -- -o lib/$(npm run get-name -s)-${{ github.ref_name }}.js
+
+      - name: Copy Static Assets
+        run: cp CHANGELOG.md lib
+
+      - name: Zip Extension
+        run: zip -9 lib/$(npm run get-name -s)-${{ github.ref_name }}.zip lib/*
+
+      - name: Publish to Releases
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            lib/*.js
+            lib/*.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
