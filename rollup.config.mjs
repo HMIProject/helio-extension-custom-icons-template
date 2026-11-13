@@ -7,7 +7,8 @@ import svgr from "@svgr/rollup";
 import { outputFileName, readCompanyConfig } from './scripts/company.mjs';
 
 
-// Everything is derived from `companyName` in company.config.json.
+// Everything is derived from `companyDomain` (and the optional `displayName`)
+// in company.config.json, see scripts/company.mjs.
 const { companyName, companySlug, namespace } = readCompanyConfig();
 
 export default {

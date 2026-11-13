@@ -3,12 +3,21 @@
    ```bash
    npm install
    ```
-2. Set your company name (only needed once):
+2. Set your company domain (only needed once):
    ```bash
    npm run setup
    ```
-   This asks for the company name and stores it in `company.config.json`
-   (you can also pass it directly: `npm run setup -- "My Company"`, or edit the file by hand).
+   This asks for your company's domain, e.g. `hmi-project.com`, and optionally a display name, and stores both in `company.config.json`.
+   You can also pass them directly (`npm run setup -- hmi-project.com "HMI Project"`) or edit the file by hand.
+   Everything else is derived from the domain:
+
+   | | Example for `hmi-project.com` |
+   |---|---|
+   | Namespace | `com.hmi-project.custom-icons` |
+   | Output file | `lib/helio-extension-icons-hmi-project-<version>.js` |
+   | Icon category and extension name in HELIO | the display name, or `hmi-project.com` if none is set |
+
+   The release workflow also reads `company.config.json`, so commit this file.
 3. Build the extension:
    ```bash
    npm run build
@@ -29,7 +38,7 @@ npm run ui
 ```
 Then open http://localhost:5178 (use `PORT=5179 npm run ui` for a different port). The interface lets you
 - upload new SVG icons (file picker or drag & drop), rename and delete them,
-- set the company name,
+- set the company domain and display name,
 - build the extension. The result is written to the `lib` folder.
 
 The interface only runs on your own computer (it listens on `127.0.0.1`) and works directly on the files in this repository:

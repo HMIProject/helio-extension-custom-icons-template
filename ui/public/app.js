@@ -38,8 +38,10 @@ let savedCompany = null;
 
 function renderCompany(info) {
   savedCompany = info;
-  $("#company-name").value = info.companyName;
-  $("#preview-category").textContent = info.companyName || "–";
+  $("#company-domain").value = info.companyDomain;
+  $("#display-name").value = info.displayName;
+  $("#display-name").placeholder = info.companyName ?? "";
+  $("#preview-category").textContent = info.companyName ?? "–";
   $("#preview-namespace").textContent = info.namespace ?? "–";
   $("#preview-output").textContent = info.outputFile ?? "–";
 }
@@ -51,8 +53,8 @@ async function loadCompany() {
 /** Shows the confirmation dialog; resolves to true if the user confirms. */
 function confirmNamespaceChange(preview) {
   const dialog = $("#company-dialog");
-  $("#dialog-old-name").textContent = `“${savedCompany.companyName}”`;
-  $("#dialog-new-name").textContent = `“${preview.companyName}”`;
+  $("#dialog-old-name").textContent = savedCompany.companyDomain;
+  $("#dialog-new-name").textContent = preview.companyDomain;
   $("#dialog-old-namespace").textContent = savedCompany.namespace;
   $("#dialog-new-namespace").textContent = preview.namespace;
   $("#dialog-new-output").textContent = preview.outputFile;
@@ -66,17 +68,20 @@ function confirmNamespaceChange(preview) {
 $("#company-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const status = $("#company-status");
-  const companyName = $("#company-name").value;
+  const company = {
+    companyDomain: $("#company-domain").value,
+    displayName: $("#display-name").value,
+  };
   try {
-    const preview = await api("POST", "/api/company/preview", { companyName });
+    const preview = await api("POST", "/api/company/preview", company);
     // Only warn when a valid namespace already exists and would change.
     if (savedCompany?.namespace && preview.namespace !== savedCompany.namespace) {
       if (!(await confirmNamespaceChange(preview))) {
-        setStatus(status, "Not saved. The company name was not changed.");
+        setStatus(status, "Not saved. The company domain was not changed.");
         return;
       }
     }
-    renderCompany(await api("PUT", "/api/company", { companyName }));
+    renderCompany(await api("PUT", "/api/company", company));
     setStatus(status, "Saved.", "success");
   } catch (error) {
     setStatus(status, error.message, "error");

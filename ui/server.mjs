@@ -1,4 +1,4 @@
-// Local web interface for managing icons, the company name and building the
+// Local web interface for managing icons, the company domain and building the
 // extension. Start with `npm run ui`. Binds to 127.0.0.1 only.
 import fs from "node:fs";
 import http from "node:http";
@@ -85,22 +85,30 @@ function readConfigFile() {
   return fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, "utf8")) : {};
 }
 
-/** Company name plus all derived values; derived values are null while no valid name is set. */
+/** Saved settings plus all derived values; derived values are null while no valid domain is set. */
 function companyInfo() {
-  const companyName = String(readConfigFile().companyName ?? "").trim();
-  let derived = { companySlug: null, namespace: null };
+  const config = readConfigFile();
+  const companyDomain = String(config.companyDomain ?? "").trim();
+  const displayName = String(config.displayName ?? "").trim();
+  let derived = { companyName: null, companySlug: null, namespace: null };
   try {
-    derived = deriveCompany(companyName);
+    derived = deriveCompany({ companyDomain, displayName });
   } catch {
-    // No valid name yet; the UI asks the user to enter one.
+    // No valid domain yet; the UI asks the user to enter one.
   }
   return {
-    companyName,
+    companyDomain: derived.companyDomain ?? companyDomain,
+    displayName,
+    companyName: derived.companyName,
     companySlug: derived.companySlug,
     namespace: derived.namespace,
     version: readPackageVersion(),
     outputFile: derived.companySlug ? outputFileName(derived.companySlug) : null,
   };
+}
+
+function companyFromBody(body) {
+  return { companyDomain: body.companyDomain, displayName: body.displayName };
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +139,7 @@ async function build() {
   const started = Date.now();
   try {
     const info = companyInfo();
-    if (!info.companySlug) throw new HttpError(400, "Please set the company name first.");
+    if (!info.companySlug) throw new HttpError(400, "Please set the company domain first.");
 
     const count = generateIconsFile();
     const { code, log } = await runRollup();
@@ -165,7 +173,7 @@ async function handleApi(req, res, pathname) {
     if (method === "PUT") {
       const body = await readJsonBody(req);
       try {
-        writeCompanyConfig(body.companyName);
+        writeCompanyConfig(companyFromBody(body));
       } catch (error) {
         throw new HttpError(400, error.message);
       }
@@ -179,7 +187,7 @@ async function handleApi(req, res, pathname) {
     const body = await readJsonBody(req);
     let derived;
     try {
-      derived = deriveCompany(body.companyName);
+      derived = deriveCompany(companyFromBody(body));
     } catch (error) {
       throw new HttpError(400, error.message);
     }

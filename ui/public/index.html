@@ -9,7 +9,7 @@
   <body>
     <header class="page-header">
       <h1>HELIO Custom Icons</h1>
-      <p class="muted">Manage your icons, set your company name and build the extension.</p>
+      <p class="muted">Manage your icons, set your company domain and build the extension.</p>
     </header>
 
     <main>
@@ -17,9 +17,14 @@
         <h2 id="company-title">Company</h2>
         <form id="company-form" class="company-form">
           <label>
-            <span>Name</span>
-            <input id="company-name" name="companyName" required maxlength="100" autocomplete="organization" />
-            <small class="muted">Namespace and file name are generated from it.</small>
+            <span>Company domain</span>
+            <input id="company-domain" name="companyDomain" required placeholder="my-company.com" inputmode="url" autocomplete="off" spellcheck="false" />
+            <small class="muted">For example <code>hmi-project.com</code>. Namespace and file name are derived from it.</small>
+          </label>
+          <label>
+            <span>Display name <span class="muted">(optional)</span></span>
+            <input id="display-name" name="displayName" maxlength="100" autocomplete="organization" />
+            <small class="muted">Shown in HELIO as icon category and extension name. Uses the domain if empty.</small>
           </label>
           <div class="form-actions">
             <button type="submit" class="primary">Save</button>
@@ -71,9 +76,9 @@
 
     <dialog id="company-dialog" class="dialog" aria-labelledby="company-dialog-title">
       <form method="dialog">
-        <h2 id="company-dialog-title">Change company name?</h2>
+        <h2 id="company-dialog-title">Change company domain?</h2>
         <p>
-          You are about to change the company name from <strong id="dialog-old-name"></strong> to
+          You are about to change the company domain from <strong id="dialog-old-name"></strong> to
           <strong id="dialog-new-name"></strong>. This also changes the namespace:
         </p>
         <dl class="summary change-summary">
@@ -91,12 +96,12 @@
           </ul>
         </div>
         <p class="muted small">
-          Tip: Changes to capitalization, spaces or special characters only (e.g. “HMI project” → “HMI Project”)
-          keep the namespace and do not show this dialog.
+          Tip: Changing only the display name keeps the namespace and does not show this dialog.
+          The same applies to writing the domain differently, e.g. with <code>https://</code>, <code>www.</code> or capital letters.
         </p>
         <div class="dialog-actions">
           <button value="cancel" autofocus>Cancel</button>
-          <button value="confirm" class="danger">Change company name</button>
+          <button value="confirm" class="danger">Change company domain</button>
         </div>
       </form>
     </dialog>
