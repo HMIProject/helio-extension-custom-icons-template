@@ -17,13 +17,9 @@
         <h2 id="company-title">Company</h2>
         <form id="company-form" class="company-form">
           <label>
-            <span>Company name</span>
+            <span>Name</span>
             <input id="company-name" name="companyName" required maxlength="100" autocomplete="organization" />
-          </label>
-          <label>
-            <span>Namespace domain</span>
-            <input id="namespace-domain" name="namespaceDomain" required placeholder="com.my-company" spellcheck="false" />
-            <small class="muted">Your domain in reverse notation, e.g. <code>com.my-company</code>.</small>
+            <small class="muted">Namespace and file name are generated from it.</small>
           </label>
           <div class="form-actions">
             <button type="submit" class="primary">Save</button>
@@ -48,7 +44,7 @@
         <div id="drop-zone" class="drop-zone">
           <p>Drop SVG files here or choose them with “Upload SVGs”.</p>
           <p class="muted small">
-            Tip: <code>fill="currentColor"</code> makes the icon use the text color in HELIO.
+            Tip: <code>fill="currentColor"</code> lets HELIO handle the correct color.
           </p>
         </div>
         <p id="icons-status" class="status" role="status"></p>
@@ -72,6 +68,38 @@
         </details>
       </section>
     </main>
+
+    <dialog id="company-dialog" class="dialog" aria-labelledby="company-dialog-title">
+      <form method="dialog">
+        <h2 id="company-dialog-title">Change company name?</h2>
+        <p>
+          You are about to change the company name from <strong id="dialog-old-name"></strong> to
+          <strong id="dialog-new-name"></strong>. This also changes the namespace:
+        </p>
+        <dl class="summary change-summary">
+          <dt>Namespace</dt>
+          <dd><code id="dialog-old-namespace"></code> → <code id="dialog-new-namespace"></code></dd>
+          <dt>Output file</dt>
+          <dd><code id="dialog-new-output"></code></dd>
+        </dl>
+        <div class="warning-box">
+          <p><strong>What this means</strong></p>
+          <ul>
+            <li>HELIO identifies your icons by namespace and icon name. With a new namespace, HELIO treats the next build as a <strong>different extension</strong>.</li>
+            <li>Icons from this extension that are already used in existing HELIO projects <strong>will no longer be found</strong> there. You would have to select them again in every project.</li>
+            <li>Files built earlier in <code>lib/</code> are kept. Load the newly built file in HELIO.</li>
+          </ul>
+        </div>
+        <p class="muted small">
+          Tip: Changes to capitalization, spaces or special characters only (e.g. “HMI project” → “HMI Project”)
+          keep the namespace and do not show this dialog.
+        </p>
+        <div class="dialog-actions">
+          <button value="cancel" autofocus>Cancel</button>
+          <button value="confirm" class="danger">Change company name</button>
+        </div>
+      </form>
+    </dialog>
 
     <template id="icon-template">
       <li class="icon-card">

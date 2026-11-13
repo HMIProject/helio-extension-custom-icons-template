@@ -7,11 +7,10 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   configFile,
-  DEFAULT_NAMESPACE_DOMAIN,
+  deriveCompany,
   outputFileName,
   projectRoot,
   readPackageVersion,
-  toSlug,
   writeCompanyConfig,
 } from "../scripts/company.mjs";
 import {
@@ -86,18 +85,21 @@ function readConfigFile() {
   return fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, "utf8")) : {};
 }
 
+/** Company name plus all derived values; derived values are null while no valid name is set. */
 function companyInfo() {
-  const config = readConfigFile();
-  const companyName = String(config.companyName ?? "").trim();
-  const namespaceDomain = config.namespaceDomain ?? DEFAULT_NAMESPACE_DOMAIN;
-  const companySlug = toSlug(companyName);
+  const companyName = String(readConfigFile().companyName ?? "").trim();
+  let derived = { companySlug: null, namespace: null };
+  try {
+    derived = deriveCompany(companyName);
+  } catch {
+    // No valid name yet; the UI asks the user to enter one.
+  }
   return {
     companyName,
-    namespaceDomain,
-    companySlug,
-    namespace: `${namespaceDomain}.custom-icons`,
+    companySlug: derived.companySlug,
+    namespace: derived.namespace,
     version: readPackageVersion(),
-    outputFile: companySlug ? outputFileName(companySlug) : null,
+    outputFile: derived.companySlug ? outputFileName(derived.companySlug) : null,
   };
 }
 
@@ -163,12 +165,25 @@ async function handleApi(req, res, pathname) {
     if (method === "PUT") {
       const body = await readJsonBody(req);
       try {
-        writeCompanyConfig({ companyName: body.companyName, namespaceDomain: body.namespaceDomain });
+        writeCompanyConfig(body.companyName);
       } catch (error) {
         throw new HttpError(400, error.message);
       }
       return send(res, 200, companyInfo());
     }
+  }
+
+  // Derived values for a name without saving it, so the UI can show what a
+  // change would do before the user confirms it.
+  if (pathname === "/api/company/preview" && method === "POST") {
+    const body = await readJsonBody(req);
+    let derived;
+    try {
+      derived = deriveCompany(body.companyName);
+    } catch (error) {
+      throw new HttpError(400, error.message);
+    }
+    return send(res, 200, { ...derived, outputFile: outputFileName(derived.companySlug) });
   }
 
   if (pathname === "/api/icons") {

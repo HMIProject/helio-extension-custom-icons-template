@@ -18,8 +18,9 @@ if (!companyName) {
 }
 
 try {
-  const config = writeCompanyConfig({ companyName });
-  console.log(`Company name set to "${config.companyName}" (id: "${config.companySlug}").`);
+  const company = writeCompanyConfig(companyName);
+  console.log(`Company name set to "${company.companyName}".`);
+  console.log(`Namespace: ${company.namespace}`);
   console.log(`Run "npm run build:icons" to rebuild the extension.`);
 } catch (error) {
   console.error(error.message);

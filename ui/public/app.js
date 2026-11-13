@@ -33,11 +33,14 @@ function setStatus(element, message, kind = "") {
 // ---------------------------------------------------------------------------
 // Company
 
+/** Last saved state, used to detect namespace changes. */
+let savedCompany = null;
+
 function renderCompany(info) {
+  savedCompany = info;
   $("#company-name").value = info.companyName;
-  $("#namespace-domain").value = info.namespaceDomain;
   $("#preview-category").textContent = info.companyName || "–";
-  $("#preview-namespace").textContent = info.namespace;
+  $("#preview-namespace").textContent = info.namespace ?? "–";
   $("#preview-output").textContent = info.outputFile ?? "–";
 }
 
@@ -45,15 +48,35 @@ async function loadCompany() {
   renderCompany(await api("GET", "/api/company"));
 }
 
+/** Shows the confirmation dialog; resolves to true if the user confirms. */
+function confirmNamespaceChange(preview) {
+  const dialog = $("#company-dialog");
+  $("#dialog-old-name").textContent = `“${savedCompany.companyName}”`;
+  $("#dialog-new-name").textContent = `“${preview.companyName}”`;
+  $("#dialog-old-namespace").textContent = savedCompany.namespace;
+  $("#dialog-new-namespace").textContent = preview.namespace;
+  $("#dialog-new-output").textContent = preview.outputFile;
+  dialog.returnValue = "cancel";
+  dialog.showModal();
+  return new Promise((resolve) => {
+    dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true });
+  });
+}
+
 $("#company-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const status = $("#company-status");
+  const companyName = $("#company-name").value;
   try {
-    const info = await api("PUT", "/api/company", {
-      companyName: $("#company-name").value,
-      namespaceDomain: $("#namespace-domain").value,
-    });
-    renderCompany(info);
+    const preview = await api("POST", "/api/company/preview", { companyName });
+    // Only warn when a valid namespace already exists and would change.
+    if (savedCompany?.namespace && preview.namespace !== savedCompany.namespace) {
+      if (!(await confirmNamespaceChange(preview))) {
+        setStatus(status, "Not saved. The company name was not changed.");
+        return;
+      }
+    }
+    renderCompany(await api("PUT", "/api/company", { companyName }));
     setStatus(status, "Saved.", "success");
   } catch (error) {
     setStatus(status, error.message, "error");

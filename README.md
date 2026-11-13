@@ -29,7 +29,7 @@ npm run ui
 ```
 Then open http://localhost:5178 (use `PORT=5179 npm run ui` for a different port). The interface lets you
 - upload new SVG icons (file picker or drag & drop), rename and delete them,
-- set the company name and namespace domain,
+- set the company name,
 - build the extension. The result is written to the `lib` folder.
 
 The interface only runs on your own computer (it listens on `127.0.0.1`) and works directly on the files in this repository:

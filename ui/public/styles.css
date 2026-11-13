@@ -8,6 +8,7 @@
   --accent: #1f6feb;
   --accent-text: #ffffff;
   --danger: #c62828;
+  --danger-text: #ffffff;
   --success: #1b7f3b;
   --warning-bg: #fff4d6;
   --warning-text: #7a5300;
@@ -27,6 +28,7 @@
     --accent: #4c8dff;
     --accent-text: #0b0d10;
     --danger: #ff6b6b;
+    --danger-text: #0b0d10;
     --success: #4cc27a;
     --warning-bg: #3b3017;
     --warning-text: #f2c96b;
@@ -317,4 +319,72 @@ pre {
   font-size: 13px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* Confirmation dialog */
+
+button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+.dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.dialog::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}
+
+.dialog p {
+  margin: 0 0 12px;
+}
+
+.change-summary {
+  margin: 0 0 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.warning-box {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+}
+
+.warning-box p {
+  margin: 0 0 6px;
+}
+
+.warning-box ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.warning-box li + li {
+  margin-top: 6px;
+}
+
+.warning-box code {
+  background: transparent;
+  padding: 0;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 16px;
 }
