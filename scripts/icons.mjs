@@ -106,6 +106,28 @@ function validateSvg(svgText) {
   return text;
 }
 
+export const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+
+// Optional prolog (BOM, XML declaration, comments, doctype), then the opening
+// <svg …> tag. Attribute values are matched as quoted strings so a ">" inside
+// a value does not end the tag early.
+const ROOT_TAG_PATTERN =
+  /^(﻿?(?:\s|<\?xml[\s\S]*?\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>)*)<svg((?:\s+[^\s=/>]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?)*)(\s*\/?>)/i;
+
+/**
+ * Adds xmlns="http://www.w3.org/2000/svg" to the root element if it has no
+ * default namespace. Browsers need it to render an SVG loaded as a file
+ * (e.g. via <img>); without it they treat the tags as unknown XML.
+ */
+export function ensureSvgNamespace(svgText) {
+  const match = svgText.match(ROOT_TAG_PATTERN);
+  if (!match) return svgText;
+  const [whole, prolog, attributes, end] = match;
+  // Only the default namespace counts; prefixed ones like xmlns:xlink do not.
+  if (/(^|\s)xmlns\s*=/.test(attributes)) return svgText;
+  return `${prolog}<svg xmlns="${SVG_NAMESPACE}"${attributes}${end}${svgText.slice(whole.length)}`;
+}
+
 export function usesCurrentColor(svgText) {
   return /currentColor/i.test(svgText);
 }
@@ -124,7 +146,7 @@ export function readIcon(fileName, svgDir = defaultSvgDir) {
 
 export function addIcon(name, svgText, svgDir = defaultSvgDir) {
   const validName = validateName(name);
-  const svg = validateSvg(svgText);
+  const svg = ensureSvgNamespace(validateSvg(svgText));
   const fileName = `${validName}.svg`;
   assertNoCollision(svgDir, validName);
   fs.mkdirSync(svgDir, { recursive: true });

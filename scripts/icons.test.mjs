@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   addIcon,
   deleteIcon,
+  ensureSvgNamespace,
   generateIconsFile,
   listIcons,
   readIcon,
@@ -12,7 +13,7 @@ import {
   toPascalCase,
 } from "./icons.mjs";
 
-const SVG = '<svg viewBox="0 0 24 24"><path d="M0 0h24v24H0z" fill="currentColor"/></svg>';
+const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M0 0h24v24H0z" fill="currentColor"/></svg>';
 const FIXED_COLOR_SVG = '<?xml version="1.0"?>\n<svg viewBox="0 0 24 24"><path fill="#000"/></svg>';
 
 let dir;
@@ -154,5 +155,46 @@ export const icons = [
     fs.writeFileSync(path.join(svgDir, "my-icon.svg"), SVG);
     fs.writeFileSync(path.join(svgDir, "my_icon.svg"), SVG);
     expect(() => generateIconsFile({ svgDir, iconsFile: path.join(dir, "icons.tsx") })).toThrow(/both result/);
+  });
+});
+
+describe("ensureSvgNamespace", () => {
+  const NS = 'xmlns="http://www.w3.org/2000/svg"';
+
+  it("adds a missing xmlns to the root element", () => {
+    expect(ensureSvgNamespace('<svg viewBox="0 0 24 24"><path/></svg>')).toBe(
+      `<svg ${NS} viewBox="0 0 24 24"><path/></svg>`,
+    );
+    expect(ensureSvgNamespace("<svg><path/></svg>")).toBe(`<svg ${NS}><path/></svg>`);
+  });
+
+  it("keeps the prolog and only touches the root element", () => {
+    const input = '<?xml version="1.0"?>\n<!-- <svg> in a comment -->\n<svg\n  width="1em"><g><svg x="1"/></g></svg>';
+    expect(ensureSvgNamespace(input)).toBe(
+      `<?xml version="1.0"?>\n<!-- <svg> in a comment -->\n<svg ${NS}\n  width="1em"><g><svg x="1"/></g></svg>`,
+    );
+  });
+
+  it("handles '>' inside attribute values", () => {
+    expect(ensureSvgNamespace('<svg data-x="a>b"><path/></svg>')).toBe(`<svg ${NS} data-x="a>b"><path/></svg>`);
+  });
+
+  it.each([
+    `<svg ${NS}><path/></svg>`,
+    "<svg xmlns='http://www.w3.org/2000/svg'><path/></svg>",
+    '<svg width="1" xmlns = "http://www.w3.org/2000/svg"><path/></svg>',
+  ])("leaves %j unchanged", (input) => {
+    expect(ensureSvgNamespace(input)).toBe(input);
+  });
+
+  it("does not treat a prefixed namespace as the default namespace", () => {
+    expect(ensureSvgNamespace('<svg xmlns:xlink="http://www.w3.org/1999/xlink"><use/></svg>')).toBe(
+      `<svg ${NS} xmlns:xlink="http://www.w3.org/1999/xlink"><use/></svg>`,
+    );
+  });
+
+  it("is applied when uploading", () => {
+    addIcon("NoNs", '<svg viewBox="0 0 24 24"><path fill="currentColor"/></svg>', svgDir);
+    expect(readIcon("NoNs.svg", svgDir)).toBe(`<svg ${NS} viewBox="0 0 24 24"><path fill="currentColor"/></svg>`);
   });
 });
