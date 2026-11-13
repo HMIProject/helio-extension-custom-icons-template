@@ -5,7 +5,7 @@ import replace from '@rollup/plugin-replace';
 import commonjs from '@rollup/plugin-commonjs';
 import json from '@rollup/plugin-json';
 import svgr from "@svgr/rollup";
-import { readCompanyConfig } from './scripts/lib/company.mjs';
+import { readCompanyConfig } from './scripts/company.mjs';
 
 
 // eslint-disable-next-line no-undef

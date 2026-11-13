@@ -3,7 +3,7 @@
 // npm run setup -- "My Company" -> sets it directly
 import fs from "node:fs";
 import readline from "node:readline/promises";
-import { configFile, toSlug } from "./lib/company.mjs";
+import { configFile, toSlug } from "./company.mjs";
 
 const current = fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, "utf8")) : {};
 
