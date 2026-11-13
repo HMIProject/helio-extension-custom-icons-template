@@ -1,9 +1,10 @@
 // Sets the company name used throughout the extension.
 // npm run setup                 -> asks interactively
 // npm run setup -- "My Company" -> sets it directly
+// (or use the web interface: npm run ui)
 import fs from "node:fs";
 import readline from "node:readline/promises";
-import { configFile, toSlug } from "./company.mjs";
+import { configFile, writeCompanyConfig } from "./company.mjs";
 
 const current = fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, "utf8")) : {};
 
@@ -16,13 +17,11 @@ if (!companyName) {
   rl.close();
 }
 
-if (!companyName || !toSlug(companyName)) {
-  console.error("Please provide a company name containing at least one letter or digit.");
+try {
+  const config = writeCompanyConfig({ companyName });
+  console.log(`Company name set to "${config.companyName}" (id: "${config.companySlug}").`);
+  console.log(`Run "npm run build:icons" to rebuild the extension.`);
+} catch (error) {
+  console.error(error.message);
   process.exit(1);
 }
-
-const config = { namespaceDomain: "com.hmi-project", ...current, companyName };
-fs.writeFileSync(configFile, JSON.stringify(config, null, 2) + "\n", "utf8");
-
-console.log(`Company name set to "${companyName}" (id: "${toSlug(companyName)}").`);
-console.log(`Run "npm run build:icons" to rebuild the extension.`);

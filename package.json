@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "setup": "node scripts/setup-company.mjs",
+    "ui": "node ui/server.mjs",
     "generate-icons": "node scripts/generate-icons.mjs",
     "build:icons": "npm run generate-icons && npm run build",
     "build": "rollup --config rollup.config.mjs",

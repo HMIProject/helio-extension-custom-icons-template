@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HELIO Custom Icons</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="page-header">
+      <h1>HELIO Custom Icons</h1>
+      <p class="muted">Manage your icons, set your company name and build the extension.</p>
+    </header>
+
+    <main>
+      <section class="card" aria-labelledby="company-title">
+        <h2 id="company-title">Company</h2>
+        <form id="company-form" class="company-form">
+          <label>
+            <span>Company name</span>
+            <input id="company-name" name="companyName" required maxlength="100" autocomplete="organization" />
+          </label>
+          <label>
+            <span>Namespace domain</span>
+            <input id="namespace-domain" name="namespaceDomain" required placeholder="com.my-company" spellcheck="false" />
+            <small class="muted">Your domain in reverse notation, e.g. <code>com.my-company</code>.</small>
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="primary">Save</button>
+            <span id="company-status" class="status" role="status"></span>
+          </div>
+        </form>
+        <dl class="summary">
+          <dt>Icon category in HELIO</dt><dd id="preview-category">–</dd>
+          <dt>Namespace</dt><dd><code id="preview-namespace">–</code></dd>
+          <dt>Output file</dt><dd><code id="preview-output">–</code></dd>
+        </dl>
+      </section>
+
+      <section class="card" aria-labelledby="icons-title">
+        <div class="section-header">
+          <h2 id="icons-title">Icons <span id="icon-count" class="count"></span></h2>
+          <label class="button primary">
+            Upload SVGs
+            <input id="file-input" type="file" accept=".svg,image/svg+xml" multiple hidden />
+          </label>
+        </div>
+        <div id="drop-zone" class="drop-zone">
+          <p>Drop SVG files here or choose them with “Upload SVGs”.</p>
+          <p class="muted small">
+            Tip: <code>fill="currentColor"</code> makes the icon use the text color in HELIO.
+          </p>
+        </div>
+        <p id="icons-status" class="status" role="status"></p>
+        <ul id="icon-grid" class="icon-grid"></ul>
+        <p id="icons-empty" class="muted" hidden>No icons yet.</p>
+      </section>
+
+      <section class="card" aria-labelledby="build-title">
+        <h2 id="build-title">Build extension</h2>
+        <p class="muted">
+          Creates the extension file in the <code>lib/</code> folder. Load this file in HELIO under
+          Settings → Extensions → “Add Extension”.
+        </p>
+        <div class="form-actions">
+          <button id="build-button" type="button" class="primary">Build extension</button>
+          <span id="build-status" class="status" role="status"></span>
+        </div>
+        <details id="build-log-wrapper" hidden>
+          <summary>Build log</summary>
+          <pre id="build-log"></pre>
+        </details>
+      </section>
+    </main>
+
+    <template id="icon-template">
+      <li class="icon-card">
+        <div class="icon-preview"><img alt="" /></div>
+        <form class="rename-form">
+          <input class="icon-name" aria-label="Icon name" maxlength="100" spellcheck="false" />
+        </form>
+        <div class="icon-meta">
+          <span class="muted small helio-name"></span>
+          <span class="badge" hidden title="This SVG does not use currentColor, so it will not take on the text color in HELIO.">fixed color</span>
+        </div>
+        <button type="button" class="delete danger-link">Delete</button>
+      </li>
+    </template>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
