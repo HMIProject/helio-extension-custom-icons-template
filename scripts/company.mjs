@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { domainToASCII, domainToUnicode, fileURLToPath } from "node:url";
+import { UserError } from "./errors.mjs";
 
 export const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const configFile = path.join(projectRoot, "company.config.json");
@@ -22,7 +23,7 @@ const DOMAIN_EXAMPLE = '"my-company.com"';
 export function normalizeDomain(input) {
   let value = String(input ?? "").trim().toLowerCase();
   if (!value) {
-    throw new Error(`Please enter your company's domain, e.g. ${DOMAIN_EXAMPLE}.`);
+    throw new UserError(`Please enter your company's domain, e.g. ${DOMAIN_EXAMPLE}.`);
   }
   value = value
     .replace(/^[a-z][a-z0-9+.-]*:\/\//, "") // scheme
@@ -41,7 +42,7 @@ export function normalizeDomain(input) {
     labels.every((label) => DOMAIN_LABEL_PATTERN.test(label)) &&
     !/^\d+$/.test(labels.at(-1)); // rejects IP addresses
   if (!valid) {
-    throw new Error(`"${String(input).trim()}" is not a valid domain. Enter your company's domain, e.g. ${DOMAIN_EXAMPLE}.`);
+    throw new UserError(`"${String(input).trim()}" is not a valid domain. Enter your company's domain, e.g. ${DOMAIN_EXAMPLE}.`);
   }
   return ascii;
 }
@@ -74,7 +75,7 @@ export function outputFileName(companySlug, version = readPackageVersion()) {
 export function validateDisplayName(displayName) {
   const name = String(displayName ?? "").trim();
   if (name.length > 100) {
-    throw new Error("The display name must not be longer than 100 characters.");
+    throw new UserError("The display name must not be longer than 100 characters.");
   }
   return name;
 }
@@ -96,17 +97,19 @@ export function deriveCompany({ companyDomain, displayName } = {}) {
   };
 }
 
-function readConfigFile(file) {
+/** The raw settings in company.config.json, or {} if the file does not exist. */
+export function readConfigFile(file = configFile) {
   return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
 }
 
+/** Reads the config and derives all values; throws a UserError explaining what to fix. */
 export function readCompanyConfig(file = configFile) {
   if (!fs.existsSync(file)) {
-    throw new Error(`Company config not found: ${file}. Run "npm run setup" first.`);
+    throw new UserError(`Company config not found: ${file}. Run "npm run setup" first.`);
   }
   const config = readConfigFile(file);
   if (!config.companyDomain && config.companyName) {
-    throw new Error(
+    throw new UserError(
       `${file} still uses the old "companyName" setting. ` +
         `Set your company's domain instead, e.g. ${DOMAIN_EXAMPLE}: run "npm run setup" or use the web interface.`,
     );
@@ -114,7 +117,36 @@ export function readCompanyConfig(file = configFile) {
   try {
     return deriveCompany(config);
   } catch (error) {
-    throw new Error(`${error.message} Check "companyDomain" in ${file} or run "npm run setup".`);
+    throw new UserError(`${error.message} Check "companyDomain" in ${file} or run "npm run setup".`);
+  }
+}
+
+/** deriveCompany plus the path of the built file. */
+export function describeCompany(values) {
+  const company = deriveCompany(values);
+  return { ...company, outputFile: outputFileName(company.companySlug) };
+}
+
+/**
+ * The saved settings for display: all derived values if the config is valid,
+ * otherwise the raw values with `namespace` and `outputFile` set to null and
+ * `problem` explaining what is wrong.
+ */
+export function readSavedCompany(file = configFile) {
+  try {
+    const company = readCompanyConfig(file);
+    return { ...company, outputFile: outputFileName(company.companySlug), problem: null };
+  } catch (error) {
+    if (!(error instanceof UserError)) throw error;
+    const config = readConfigFile(file);
+    return {
+      companyDomain: String(config.companyDomain ?? ""),
+      displayName: String(config.displayName ?? ""),
+      companyName: null,
+      namespace: null,
+      outputFile: null,
+      problem: error.message,
+    };
   }
 }
 

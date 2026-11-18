@@ -49,8 +49,8 @@ describe("addIcon", () => {
     addIcon("Fixed", FIXED_COLOR_SVG, svgDir);
     expect(readIcon("arrow-left.svg", svgDir)).toBe(SVG);
     expect(listIcons(svgDir)).toEqual([
-      { fileName: "arrow-left.svg", exportName: "iconArrowLeft", iconName: "ArrowLeft", usesCurrentColor: true, version: expect.any(String) },
-      { fileName: "Fixed.svg", exportName: "iconFixed", iconName: "Fixed", usesCurrentColor: false, version: expect.any(String) },
+      { fileName: "arrow-left.svg", iconName: "ArrowLeft", usesCurrentColor: true, version: expect.any(String) },
+      { fileName: "Fixed.svg", iconName: "Fixed", usesCurrentColor: false, version: expect.any(String) },
     ]);
   });
 
@@ -269,8 +269,8 @@ describe("upload with replace", () => {
       svgDir,
     );
     expect(results).toEqual([
-      { source: "lock.svg", action: "replace", fileName: "Lock.svg", iconName: "Lock" },
-      { source: "Key.svg", action: "add", fileName: "Key.svg", iconName: "Key" },
+      { source: "lock.svg", action: "replace", fileName: "Lock.svg" },
+      { source: "Key.svg", action: "add", fileName: "Key.svg" },
     ]);
     expect(readIcon("Lock.svg", svgDir)).toBe(V2);
     expect(readIcon("Key.svg", svgDir)).toBe(V1);
@@ -315,9 +315,8 @@ describe("deleteIcons", () => {
     expect(fs.existsSync(path.join(dir, "outside.svg"))).toBe(true);
   });
 
-  it("accepts an empty or invalid list", () => {
+  it("accepts an empty list", () => {
     expect(deleteIcons([], svgDir)).toEqual([]);
-    expect(deleteIcons(undefined, svgDir)).toEqual([]);
   });
 });
 
@@ -348,7 +347,9 @@ describe("generateIconsFile with allowEmpty", () => {
     generateIconsFile({ svgDir, iconsFile });
     const past = new Date(Date.now() - 60_000);
     fs.utimesSync(iconsFile, past, past);
+    // Compare with what the file system stored; it may round the timestamp.
+    const before = fs.statSync(iconsFile).mtimeMs;
     generateIconsFile({ svgDir, iconsFile });
-    expect(fs.statSync(iconsFile).mtimeMs).toBe(past.getTime());
+    expect(fs.statSync(iconsFile).mtimeMs).toBe(before);
   });
 });

@@ -1,20 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import { projectRoot } from "./company.mjs";
+import { UserError } from "./errors.mjs";
 
 export const defaultSvgDir = path.join(projectRoot, "src", "svg");
 export const defaultIconsFile = path.join(projectRoot, "src", "icons.tsx");
 
 export const MAX_SVG_BYTES = 1024 * 1024;
-const ICON_NAME_PATTERN = /^[A-Za-z0-9 _-]+$/;
-
-/** Error caused by invalid user input; `status` is the HTTP status to report. */
-export class IconError extends Error {
-  constructor(message, status = 400) {
-    super(message);
-    this.status = status;
-  }
-}
+const MAX_SVG_LABEL = `${MAX_SVG_BYTES / 1024 / 1024} MB`;
+/** Characters allowed in icon names (= SVG file names without extension). */
+const NAME_CHARS = "A-Za-z0-9 _-";
+const ICON_NAME_PATTERN = new RegExp(`^[${NAME_CHARS}]+$`);
+const INVALID_NAME_CHARS = new RegExp(`[^${NAME_CHARS}]+`, "g");
 
 export function toPascalCase(value) {
   const cleaned = value
@@ -30,8 +27,8 @@ export function toPascalCase(value) {
   return cleaned;
 }
 
-export function toExportName(componentName) {
-  return `icon${componentName}`;
+function stripSvgExtension(fileName) {
+  return fileName.replace(/\.svg$/i, "");
 }
 
 function svgFileNames(svgDir) {
@@ -43,23 +40,41 @@ function svgFileNames(svgDir) {
     .sort((a, b) => a.localeCompare(b));
 }
 
+/**
+ * The name HELIO uses for an icon. It is also the name of the React component
+ * in src/icons.tsx, so it must be a valid identifier: "arrow-left.svg" -> "ArrowLeft".
+ */
+function iconNameOf(fileName) {
+  return toPascalCase(stripSvgExtension(fileName));
+}
+
 function toEntry(fileName) {
-  const componentName = toPascalCase(path.basename(fileName, path.extname(fileName)));
-  return {
-    fileName,
-    componentName,
-    exportName: toExportName(componentName),
-    iconName: componentName,
-  };
+  return { fileName, iconName: iconNameOf(fileName) };
+}
+
+/**
+ * Maps icon name -> file name for all SVGs in svgDir. Throws if two files
+ * result in the same icon name (that would produce duplicate exports).
+ */
+function iconNameIndex(svgDir) {
+  const index = new Map();
+  for (const fileName of svgFileNames(svgDir)) {
+    const iconName = iconNameOf(fileName);
+    if (index.has(iconName)) {
+      throw new UserError(`"${index.get(iconName)}" and "${fileName}" both result in the icon name "${iconName}".`);
+    }
+    index.set(iconName, fileName);
+  }
+  return index;
 }
 
 /** Checks a user-supplied icon name (without extension) and returns it trimmed. */
 function validateName(name) {
-  const trimmed = String(name ?? "").trim().replace(/\.svg$/i, "");
-  if (!trimmed) throw new IconError("Please enter a name for the icon.");
-  if (trimmed.length > 100) throw new IconError("The icon name must not be longer than 100 characters.");
+  const trimmed = stripSvgExtension(String(name ?? "").trim());
+  if (!trimmed) throw new UserError("Please enter a name for the icon.");
+  if (trimmed.length > 100) throw new UserError("The icon name must not be longer than 100 characters.");
   if (!ICON_NAME_PATTERN.test(trimmed)) {
-    throw new IconError("The icon name may only contain letters, digits, spaces, '-' and '_'.");
+    throw new UserError("The icon name may only contain letters, digits, spaces, '-' and '_'.");
   }
   return trimmed;
 }
@@ -68,11 +83,11 @@ function validateName(name) {
 function resolveExisting(svgDir, fileName) {
   const base = path.basename(String(fileName ?? ""));
   if (base !== fileName || !base.toLowerCase().endsWith(".svg")) {
-    throw new IconError("Invalid file name.");
+    throw new UserError("Invalid file name.");
   }
   const filePath = path.resolve(svgDir, base);
   if (path.dirname(filePath) !== path.resolve(svgDir) || !fs.existsSync(filePath)) {
-    throw new IconError(`Icon "${fileName}" not found.`, 404);
+    throw new UserError(`Icon "${fileName}" not found.`, 404);
   }
   return filePath;
 }
@@ -80,30 +95,10 @@ function resolveExisting(svgDir, fileName) {
 /** Throws if `newName` would map to the same icon name as another file. */
 function assertNoCollision(svgDir, newName, ignoreFileName) {
   const iconName = toPascalCase(newName);
-  const clash = svgFileNames(svgDir)
-    .filter((fileName) => fileName !== ignoreFileName)
-    .find((fileName) => toEntry(fileName).iconName === iconName);
-  if (clash) {
-    throw new IconError(`An icon named "${iconName}" already exists (${clash}).`, 409);
+  const clash = iconNameIndex(svgDir).get(iconName);
+  if (clash && clash !== ignoreFileName) {
+    throw new UserError(`An icon named "${iconName}" already exists (${clash}).`, 409);
   }
-}
-
-function validateSvg(svgText) {
-  const text = String(svgText ?? "");
-  if (Buffer.byteLength(text, "utf8") > MAX_SVG_BYTES) {
-    throw new IconError("The SVG file is larger than 1 MB.");
-  }
-  // Allow an XML declaration, comments and a doctype before the root element.
-  const withoutProlog = text
-    .replace(/^﻿/, "")
-    .replace(/<\?xml[\s\S]*?\?>/g, "")
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<!DOCTYPE[\s\S]*?>/gi, "")
-    .trim();
-  if (!/^<svg[\s>]/i.test(withoutProlog) || !/<\/svg>\s*$/i.test(withoutProlog)) {
-    throw new IconError("The file is not a valid SVG (missing <svg> root element).");
-  }
-  return text;
 }
 
 export const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
@@ -112,13 +107,26 @@ export const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 // <svg …> tag. Attribute values are matched as quoted strings so a ">" inside
 // a value does not end the tag early.
 const ROOT_TAG_PATTERN =
-  /^(﻿?(?:\s|<\?xml[\s\S]*?\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>)*)<svg((?:\s+[^\s=/>]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?)*)(\s*\/?>)/i;
+  /^(\uFEFF?(?:\s|<\?xml[\s\S]*?\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>)*)<svg((?:\s+[^\s=/>]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?)*)(\s*\/?>)/i;
 
 /**
- * Adds xmlns="http://www.w3.org/2000/svg" to the root element if it has no
- * default namespace. Browsers need it to render an SVG loaded as a file
- * (e.g. via <img>); without it they treat the tags as unknown XML.
+ * Validates an uploaded SVG and returns it ready to be stored: with
+ * xmlns="http://www.w3.org/2000/svg" on the root element if it had no default
+ * namespace. Browsers need it to render an SVG loaded as a file (e.g. via
+ * <img>); without it they treat the tags as unknown XML.
  */
+function prepareSvg(svgText) {
+  const text = String(svgText ?? "");
+  if (Buffer.byteLength(text, "utf8") > MAX_SVG_BYTES) {
+    throw new UserError(`The SVG file is larger than ${MAX_SVG_LABEL}.`);
+  }
+  if (!ROOT_TAG_PATTERN.test(text) || !/<\/svg>\s*$/i.test(text)) {
+    throw new UserError("The file is not a valid SVG (missing <svg> root element).");
+  }
+  return ensureSvgNamespace(text);
+}
+
+/** Adds the SVG namespace to the root element if it has no default namespace. */
 export function ensureSvgNamespace(svgText) {
   const match = svgText.match(ROOT_TAG_PATTERN);
   if (!match) return svgText;
@@ -132,24 +140,39 @@ export function usesCurrentColor(svgText) {
   return /currentColor/i.test(svgText);
 }
 
+/** usesCurrentColor per "<path>@<version>" from the last listIcons call, so unchanged files are not read again. */
+let colorCache = new Map();
+
 /**
  * Lists all icons. `version` changes whenever the file changes, so clients can
- * use it to cache previews and reload only icons that were replaced.
+ * use it to cache previews and reload only icons that were replaced. File
+ * contents are only read for new or changed files.
  */
 export function listIcons(svgDir = defaultSvgDir) {
-  return svgFileNames(svgDir).map((fileName) => {
+  const nextCache = new Map();
+  const icons = svgFileNames(svgDir).map((fileName) => {
     const filePath = path.join(svgDir, fileName);
-    const svg = fs.readFileSync(filePath, "utf8");
-    const { componentName, ...entry } = toEntry(fileName);
-    const version = `${Math.round(fs.statSync(filePath).mtimeMs)}-${svg.length}`;
-    return { ...entry, usesCurrentColor: usesCurrentColor(svg), version };
+    const { mtimeMs, size } = fs.statSync(filePath);
+    const version = `${Math.round(mtimeMs)}-${size}`;
+    const cacheKey = `${filePath}@${version}`;
+    const currentColor = colorCache.get(cacheKey) ?? usesCurrentColor(fs.readFileSync(filePath, "utf8"));
+    nextCache.set(cacheKey, currentColor);
+    return { ...toEntry(fileName), usesCurrentColor: currentColor, version };
   });
+  colorCache = nextCache;
+  return icons;
 }
 
 /** "my icon (1).svg" -> "my icon -1-" -> "my icon -1": only characters allowed in icon names. */
 export function nameFromFileName(fileName) {
-  const base = path.basename(String(fileName ?? "")).replace(/\.svg$/i, "");
-  return base.replace(/[^A-Za-z0-9 _-]+/g, "-").replace(/^-+|-+$/g, "") || "icon";
+  const base = stripSvgExtension(path.basename(String(fileName ?? "")));
+  return base.replace(INVALID_NAME_CHARS, "-").replace(/^-+|-+$/g, "") || "icon";
+}
+
+/** Creates a new file; fails instead of overwriting an existing one. */
+function writeNewFile(filePath, content) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content, { encoding: "utf8", flag: "wx" });
 }
 
 /** Writes via a temporary file so an interrupted write never leaves a half-written SVG. */
@@ -171,26 +194,26 @@ function writeFileAtomic(filePath, content) {
  * `files` is a list of `{ name, svg }` where `name` is the uploaded file name.
  */
 export function planUpload(files, svgDir = defaultSvgDir) {
-  const existing = new Map(svgFileNames(svgDir).map((fileName) => [toEntry(fileName).iconName, fileName]));
+  const existing = iconNameIndex(svgDir);
   const seen = new Map();
 
-  return (Array.isArray(files) ? files : []).map(({ name, svg } = {}) => {
+  return files.map(({ name, svg } = {}) => {
     const source = String(name ?? "");
     try {
       const validName = validateName(nameFromFileName(source));
-      const content = ensureSvgNamespace(validateSvg(svg));
+      const content = prepareSvg(svg);
       const iconName = toPascalCase(validName);
       if (seen.has(iconName)) {
-        throw new IconError(`"${seen.get(iconName)}" in this upload already results in the icon name "${iconName}".`);
+        throw new UserError(`"${seen.get(iconName)}" in this upload already results in the icon name "${iconName}".`);
       }
       seen.set(iconName, source);
 
       const target = existing.get(iconName);
-      if (!target) return { source, action: "add", fileName: `${validName}.svg`, iconName, content };
+      if (!target) return { source, action: "add", fileName: `${validName}.svg`, content };
       const current = fs.readFileSync(path.join(svgDir, target), "utf8");
-      return { source, action: current === content ? "unchanged" : "replace", fileName: target, iconName, content };
+      return { source, action: current === content ? "unchanged" : "replace", fileName: target, content };
     } catch (error) {
-      if (!(error instanceof IconError)) throw error;
+      if (!(error instanceof UserError)) throw error;
       return { source, action: "error", error: error.message };
     }
   });
@@ -198,15 +221,10 @@ export function planUpload(files, svgDir = defaultSvgDir) {
 
 /** Applies an upload as described by planUpload and returns the results (without file contents). */
 export function applyUpload(files, svgDir = defaultSvgDir) {
-  const plan = planUpload(files, svgDir);
-  fs.mkdirSync(svgDir, { recursive: true });
-  return plan.map(({ content, ...result }) => {
+  return planUpload(files, svgDir).map(({ content, ...result }) => {
     try {
-      if (result.action === "add") {
-        fs.writeFileSync(path.join(svgDir, result.fileName), content, { encoding: "utf8", flag: "wx" });
-      } else if (result.action === "replace") {
-        writeFileAtomic(path.join(svgDir, result.fileName), content);
-      }
+      if (result.action === "add") writeNewFile(path.join(svgDir, result.fileName), content);
+      else if (result.action === "replace") writeFileAtomic(path.join(svgDir, result.fileName), content);
       return result;
     } catch (error) {
       return { source: result.source, action: "error", error: error.message };
@@ -217,11 +235,10 @@ export function applyUpload(files, svgDir = defaultSvgDir) {
 /** Replaces the content of an existing icon; its name stays the same. */
 export function replaceIcon(fileName, svgText, svgDir = defaultSvgDir) {
   const filePath = resolveExisting(svgDir, fileName);
-  const content = ensureSvgNamespace(validateSvg(svgText));
+  const content = prepareSvg(svgText);
   const changed = fs.readFileSync(filePath, "utf8") !== content;
   if (changed) writeFileAtomic(filePath, content);
-  const { componentName, ...entry } = toEntry(fileName);
-  return { ...entry, changed };
+  return { ...toEntry(fileName), changed };
 }
 
 export function readIcon(fileName, svgDir = defaultSvgDir) {
@@ -230,11 +247,10 @@ export function readIcon(fileName, svgDir = defaultSvgDir) {
 
 export function addIcon(name, svgText, svgDir = defaultSvgDir) {
   const validName = validateName(name);
-  const svg = ensureSvgNamespace(validateSvg(svgText));
+  const content = prepareSvg(svgText);
   const fileName = `${validName}.svg`;
   assertNoCollision(svgDir, validName);
-  fs.mkdirSync(svgDir, { recursive: true });
-  fs.writeFileSync(path.join(svgDir, fileName), svg, { encoding: "utf8", flag: "wx" });
+  writeNewFile(path.join(svgDir, fileName), content);
   return toEntry(fileName);
 }
 
@@ -244,12 +260,12 @@ export function deleteIcon(fileName, svgDir = defaultSvgDir) {
 
 /** Deletes several icons; one invalid or missing file does not stop the others. */
 export function deleteIcons(fileNames, svgDir = defaultSvgDir) {
-  return (Array.isArray(fileNames) ? fileNames : []).map((fileName) => {
+  return fileNames.map((fileName) => {
     try {
       deleteIcon(fileName, svgDir);
       return { fileName, deleted: true };
     } catch (error) {
-      if (!(error instanceof IconError)) throw error;
+      if (!(error instanceof UserError)) throw error;
       return { fileName, deleted: false, error: error.message };
     }
   });
@@ -275,20 +291,15 @@ export const icons: CreateIconResult[] = [];
 `;
   }
 
-  const iconEntries = fileNames.map(toEntry);
-
-  const imports = iconEntries
-    .map(({ componentName, fileName }) => `import ${componentName} from "./svg/${fileName}";`)
-    .join("\n");
-
-  const iconExports = iconEntries
+  const iconNames = fileNames.map(iconNameOf);
+  const imports = fileNames.map((fileName, i) => `import ${iconNames[i]} from "./svg/${fileName}";`).join("\n");
+  const iconExports = iconNames
     .map(
-      ({ exportName, iconName, componentName }) =>
-        `export const ${exportName} = createIcon(namespace, {\n  name: "${iconName}",\n  category: companyName,\n  Icon: ${componentName},\n});`,
+      (iconName) =>
+        `export const icon${iconName} = createIcon(namespace, {\n  name: "${iconName}",\n  category: companyName,\n  Icon: ${iconName},\n});`,
     )
     .join("\n\n");
-
-  const iconList = iconEntries.map(({ exportName }) => exportName).join(",\n  ");
+  const iconList = iconNames.map((iconName) => `icon${iconName}`).join(",\n  ");
 
   return `import { createIcon } from "@hmiproject/helio-sdk";
 import { companyName } from "./company";
@@ -310,20 +321,9 @@ export const icons = [
  * when its content changes.
  */
 export function generateIconsFile({ svgDir = defaultSvgDir, iconsFile = defaultIconsFile, allowEmpty = false } = {}) {
-  if (!fs.existsSync(svgDir) && !allowEmpty) {
-    throw new IconError(`SVG directory not found: ${svgDir}`);
-  }
-  const fileNames = svgFileNames(svgDir);
+  const fileNames = [...iconNameIndex(svgDir).values()].sort((a, b) => a.localeCompare(b));
   if (fileNames.length === 0 && !allowEmpty) {
-    throw new IconError(`No SVG files found in: ${svgDir}`);
-  }
-  const names = new Map();
-  for (const fileName of fileNames) {
-    const { iconName } = toEntry(fileName);
-    if (names.has(iconName)) {
-      throw new IconError(`"${names.get(iconName)}" and "${fileName}" both result in the icon name "${iconName}".`);
-    }
-    names.set(iconName, fileName);
+    throw new UserError(`No SVG files found in: ${svgDir}`);
   }
   const content = renderIconsFile(fileNames);
   if (!fs.existsSync(iconsFile) || fs.readFileSync(iconsFile, "utf8") !== content) {

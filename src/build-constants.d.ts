@@ -2,3 +2,5 @@
 // Kept in a declaration file so the replace plugin never rewrites them.
 declare const __COMPANY_NAME__: string;
 declare const __COMPANY_NAMESPACE__: string;
+/** Version from package.json */
+declare const __EXTENSION_VERSION__: string;

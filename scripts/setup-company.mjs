@@ -3,11 +3,10 @@
 // npm run setup -- my-company.com                  -> sets the domain
 // npm run setup -- my-company.com "My Company"     -> sets domain and display name
 // (or use the web interface: npm run ui)
-import fs from "node:fs";
 import readline from "node:readline/promises";
-import { configFile, writeCompanyConfig } from "./company.mjs";
+import { readConfigFile, writeCompanyConfig } from "./company.mjs";
 
-const current = fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, "utf8")) : {};
+const current = readConfigFile();
 const [domainArg = "", ...nameArgs] = process.argv.slice(2);
 
 let companyDomain = domainArg.trim();

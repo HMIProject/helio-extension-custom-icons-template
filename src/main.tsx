@@ -6,7 +6,8 @@ import { icons } from './icons';
 export default createLibraryExtension({
   name: `${companyName} Icons`,
   description: `Material UI Icons used in ${companyName} HMI`,
-  version: '1.0.0',
+  // From package.json, inserted by rollup.config.mjs.
+  version: __EXTENSION_VERSION__,
   author: companyName,
 
   minimumRequiredHelioVersion: '25.4.0',

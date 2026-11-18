@@ -3,8 +3,6 @@ const $ = (selector) => document.querySelector(selector);
 const RENAME_WARNING =
   "HELIO references icons by their name. If this icon is already used in HELIO projects, " +
   "it will no longer be found there after renaming.";
-const DELETE_WARNING =
-  "If this icon is already used in HELIO projects, it will be missing there the next time the extension is loaded.";
 
 let icons = [];
 
@@ -19,9 +17,7 @@ async function api(method, url, body) {
   }
   const response = await fetch(url, options);
   const data = await response.json().catch(() => ({}));
-  if (!response.ok && !("ok" in data)) {
-    throw new Error(data.error || `Error ${response.status}`);
-  }
+  if (!response.ok) throw new Error(data.error || `Error ${response.status}`);
   return data;
 }
 
@@ -29,6 +25,23 @@ function setStatus(element, message, kind = "") {
   element.textContent = message;
   element.className = `status ${kind}`.trim();
 }
+
+/** Replaces the children of `list` with one <li> per text. */
+function fillList(list, texts) {
+  const fragment = document.createDocumentFragment();
+  for (const text of texts) {
+    const li = document.createElement("li");
+    li.textContent = text;
+    fragment.append(li);
+  }
+  list.replaceChildren(fragment);
+}
+
+function plural(count, word) {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+
+const naturalOrder = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 /** Opens a <dialog method="dialog">; resolves to true if it was closed with the "confirm" button. */
 function openDialog(dialog) {
@@ -53,6 +66,8 @@ function renderCompany(info) {
   $("#preview-category").textContent = info.companyName ?? "–";
   $("#preview-namespace").textContent = info.namespace ?? "–";
   $("#preview-output").textContent = info.outputFile ?? "–";
+  // E.g. an invalid domain or a config from an earlier version.
+  if (info.problem) setStatus($("#company-status"), info.problem, "error");
 }
 
 async function loadCompany() {
@@ -102,8 +117,8 @@ $("#company-form").addEventListener("input", () => {
 
 /** Number of cards rendered at once; more are added with "Show more". */
 const PAGE_SIZE = 240;
-/** Upload batches stay well below the server limits (500 files, 32 MB). */
-const BATCH_MAX_FILES = 100;
+/** Upload batches stay below the server limits (MAX_UPLOAD in ui/server.mjs: 500 files, 32 MB). */
+const BATCH_MAX_FILES = 400;
 const BATCH_MAX_BYTES = 4 * 1024 * 1024;
 
 /** fileName -> "new" | "updated" for the most recent upload or replace. */
@@ -120,6 +135,8 @@ const selection = new Set();
 let currentMatches = [];
 /** Index in currentMatches of the last clicked checkbox, for shift-click ranges. */
 let lastSelectedIndex = null;
+
+const grid = $("#icon-grid");
 
 function baseName(fileName) {
   return fileName.replace(/\.svg$/i, "");
@@ -161,21 +178,31 @@ function createCard(icon) {
   return card;
 }
 
-function renderIcons() {
-  const matches = filteredIcons();
-  currentMatches = matches;
-  const shown = matches.slice(0, visibleCount);
+/**
+ * Renders the cards for the current search and filter. With `append`, only the
+ * cards added by "Show more" are created; the existing ones stay as they are.
+ */
+function renderIcons({ append = false } = {}) {
+  if (!append) {
+    currentMatches = filteredIcons();
+    // Indices shift with a new list, so a shift-click range would be wrong.
+    lastSelectedIndex = null;
+  }
+  const matches = currentMatches;
+  const from = append ? grid.children.length : 0;
   const fragment = document.createDocumentFragment();
-  for (const icon of shown) fragment.append(createCard(icon));
-  $("#icon-grid").replaceChildren(fragment);
+  for (const icon of matches.slice(from, visibleCount)) fragment.append(createCard(icon));
+  if (append) grid.append(fragment);
+  else grid.replaceChildren(fragment);
 
+  const shown = Math.min(visibleCount, matches.length);
   const filtered = matches.length !== icons.length;
   $("#icon-count").textContent = filtered ? `(${matches.length} of ${icons.length})` : `(${icons.length})`;
   $("#icons-empty").hidden = icons.length > 0;
   $("#icons-no-match").hidden = icons.length === 0 || matches.length > 0;
-  $("#show-more-wrapper").hidden = shown.length >= matches.length;
-  $("#show-more-info").textContent = `Showing ${shown.length} of ${matches.length}`;
-  $("#show-more").textContent = `Show ${Math.min(PAGE_SIZE, matches.length - shown.length)} more`;
+  $("#show-more-wrapper").hidden = shown >= matches.length;
+  $("#show-more-info").textContent = `Showing ${shown} of ${matches.length}`;
+  $("#show-more").textContent = `Show ${Math.min(PAGE_SIZE, matches.length - shown)} more`;
   $("#build-button").disabled = icons.length === 0;
   updateSelectionBar();
 }
@@ -243,7 +270,6 @@ $("#select-all").addEventListener("change", (event) => {
     currentMatches.map((icon) => icon.fileName),
     event.target.checked,
   );
-  lastSelectedIndex = null;
 });
 $("#clear-selection").addEventListener("click", clearSelection);
 document.addEventListener("keydown", (event) => {
@@ -251,33 +277,24 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && selection.size && !typing && !document.querySelector("dialog[open]")) clearSelection();
 });
 
-const naturalOrder = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
-
-$("#delete-selected").addEventListener("click", async () => {
-  const fileNames = [...selection].sort(naturalOrder.compare);
+/** Asks for confirmation, then deletes the icons (used for one card and for the selection). */
+async function deleteFiles(fileNames) {
   if (fileNames.length === 0) return;
-
-  const count = plural(fileNames.length, "icon");
-  $("#delete-dialog-title").textContent = `Delete ${count}?`;
+  const sorted = [...fileNames].sort(naturalOrder.compare);
+  const count = plural(sorted.length, "icon");
+  $("#delete-dialog-title").textContent = sorted.length === 1 ? `Delete “${baseName(sorted[0])}”?` : `Delete ${count}?`;
   $("#delete-list-summary").textContent = `${count} will be deleted`;
-  const list = document.createDocumentFragment();
-  for (const fileName of fileNames) {
-    const li = document.createElement("li");
-    li.textContent = baseName(fileName);
-    list.append(li);
-  }
-  $("#delete-list").replaceChildren(list);
+  fillList($("#delete-list"), sorted.map(baseName));
   $("#delete-confirm").textContent = `Delete ${count}`;
   if (!(await openDialog($("#delete-dialog")))) return;
 
   const status = $("#icons-status");
   setStatus(status, `Deleting ${count} …`);
   try {
-    const { results } = await api("POST", "/api/icons/delete", { files: fileNames });
+    const { results } = await api("POST", "/api/icons/delete", { files: sorted });
     const deleted = results.filter((result) => result.deleted);
     const failed = results.filter((result) => !result.deleted);
-    for (const result of deleted) selection.delete(result.fileName);
-    lastSelectedIndex = null;
+    // loadIcons drops deleted icons from the selection.
     await loadIcons();
     const errors = failed.map((result) => `${result.fileName}: ${result.error}`);
     setStatus(
@@ -289,35 +306,32 @@ $("#delete-selected").addEventListener("click", async () => {
     setStatus(status, error.message, "error");
     await loadIcons().catch(() => {});
   }
-});
+}
+
+$("#delete-selected").addEventListener("click", () => deleteFiles([...selection]));
 
 function findIcon(fileName) {
   return icons.find((icon) => icon.fileName === fileName);
 }
 
-// Search and filter. Rendering is cheap, but debounce typing anyway.
+// Search and filter start again at the first page.
+function showFirstPage() {
+  visibleCount = PAGE_SIZE;
+  renderIcons();
+}
 let searchTimer;
 $("#icon-search").addEventListener("input", () => {
+  // Rendering is cheap, but debounce typing anyway.
   clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    visibleCount = PAGE_SIZE;
-    lastSelectedIndex = null;
-    renderIcons();
-  }, 120);
+  searchTimer = setTimeout(showFirstPage, 120);
 });
-$("#icon-filter").addEventListener("change", () => {
-  visibleCount = PAGE_SIZE;
-  lastSelectedIndex = null;
-  renderIcons();
-});
+$("#icon-filter").addEventListener("change", showFirstPage);
 $("#show-more").addEventListener("click", () => {
   visibleCount += PAGE_SIZE;
-  renderIcons();
+  renderIcons({ append: true });
 });
 
 // --- Card actions (one set of listeners for all cards) ---------------------
-
-const grid = $("#icon-grid");
 
 async function renameFromInput(input) {
   const fileName = input.closest(".icon-card").dataset.file;
@@ -387,16 +401,7 @@ grid.addEventListener("click", async (event) => {
     return;
   }
 
-  if (event.target.closest(".delete")) {
-    if (!confirm(`Delete icon “${baseName(fileName)}”?\n\n${DELETE_WARNING}`)) return;
-    try {
-      await api("DELETE", `/api/icons/${encodeURIComponent(fileName)}`);
-      setStatus($("#icons-status"), `Deleted “${baseName(fileName)}”.`, "success");
-      await loadIcons();
-    } catch (error) {
-      setStatus($("#icons-status"), error.message, "error");
-    }
-  }
+  if (event.target.closest(".delete")) deleteFiles([fileName]);
 });
 
 $("#replace-input").addEventListener("change", async (event) => {
@@ -487,23 +492,13 @@ function groupResults(results) {
   return groups;
 }
 
-function plural(count, word) {
-  return `${count} ${word}${count === 1 ? "" : "s"}`;
-}
-
-const GROUP_LABELS = {
-  replace: "Replace",
-  add: "New",
-  unchanged: "Unchanged (skipped)",
-  error: "Errors (skipped)",
-};
-
-const CHIP_LABELS = {
-  replace: (count) => `${count} to replace`,
-  add: (count) => `${count} new`,
-  unchanged: (count) => `${count} unchanged`,
-  error: (count) => plural(count, "error"),
-};
+/** Upload result types in display order, with their labels in the review dialog. */
+const UPLOAD_ACTIONS = [
+  { action: "replace", group: "Replace", chip: (count) => `${count} to replace` },
+  { action: "add", group: "New", chip: (count) => `${count} new` },
+  { action: "error", group: "Errors (skipped)", chip: (count) => plural(count, "error") },
+  { action: "unchanged", group: "Unchanged (skipped)", chip: (count) => `${count} unchanged`, collapsed: true },
+];
 
 function describeResult(result) {
   if (result.action === "error") return `${result.source}: ${result.error}`;
@@ -523,34 +518,28 @@ function reviewUpload(groups) {
       : "Nothing to save. None of the files would change an icon.";
 
   const chips = document.createDocumentFragment();
-  for (const action of ["replace", "add", "unchanged", "error"]) {
-    if (groups[action].length === 0) continue;
-    const chip = document.createElement("li");
-    chip.className = `chip chip-${action}`;
-    chip.textContent = CHIP_LABELS[action](groups[action].length);
-    chips.append(chip);
-  }
-  $("#upload-chips").replaceChildren(chips);
-
   const sections = document.createDocumentFragment();
-  for (const action of ["replace", "add", "error", "unchanged"]) {
+  for (const { action, group, chip, collapsed } of UPLOAD_ACTIONS) {
     const items = groups[action];
     if (items.length === 0) continue;
+
+    const chipItem = document.createElement("li");
+    chipItem.className = `chip chip-${action}`;
+    chipItem.textContent = chip(items.length);
+    chips.append(chipItem);
+
     const details = document.createElement("details");
-    details.className = `upload-group group-${action}`;
-    details.open = action !== "unchanged";
+    details.className = `list-group group-${action}`;
+    details.open = !collapsed;
     const summary = document.createElement("summary");
-    summary.textContent = `${GROUP_LABELS[action]} (${items.length})`;
+    summary.textContent = `${group} (${items.length})`;
     const list = document.createElement("ul");
     const sorted = [...items].sort((a, b) => naturalOrder.compare(a.fileName ?? a.source, b.fileName ?? b.source));
-    for (const result of sorted) {
-      const li = document.createElement("li");
-      li.textContent = describeResult(result);
-      list.append(li);
-    }
+    fillList(list, sorted.map(describeResult));
     details.append(summary, list);
     sections.append(details);
   }
+  $("#upload-chips").replaceChildren(chips);
   $("#upload-groups").replaceChildren(sections);
 
   $("#upload-replace-note").hidden = groups.replace.length === 0;
@@ -596,12 +585,9 @@ async function uploadFiles(fileList) {
 
     // Only new icons and no problems: nothing to review, just add them.
     const needsReview = groups.replace.length > 0 || groups.error.length > 0 || toSave === 0;
+    // With nothing to save the dialog only offers "Close", so it never confirms.
     if (needsReview && !(await reviewUpload(groups))) {
       setStatus(status, toSave === 0 ? "Nothing changed." : "Upload cancelled. Nothing was changed.");
-      return;
-    }
-    if (toSave === 0) {
-      setStatus(status, "Nothing changed.");
       return;
     }
 
@@ -626,7 +612,7 @@ async function uploadFiles(fileList) {
     if (groups.unchanged.length) parts.push(`${groups.unchanged.length} unchanged`);
     const failed = groups.error.length + done.error.length + done.unchanged.length;
     if (failed) parts.push(`${failed} skipped`);
-    const errors = done.error.map((result) => `${result.source}: ${result.error}`);
+    const errors = done.error.map(describeResult);
     setStatus(
       status,
       `${parts.join(", ")}.${errors.length ? ` ${errors.join(" · ")}` : ""}${

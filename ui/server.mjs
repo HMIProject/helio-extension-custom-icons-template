@@ -5,21 +5,20 @@ import http from "node:http";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import {
-  configFile,
-  deriveCompany,
+  describeCompany,
   outputFileName,
   projectRoot,
-  readPackageVersion,
+  readCompanyConfig,
+  readSavedCompany,
   writeCompanyConfig,
 } from "../scripts/company.mjs";
+import { UserError } from "../scripts/errors.mjs";
 import {
-  addIcon,
   applyUpload,
-  deleteIcon,
   deleteIcons,
   generateIconsFile,
-  IconError,
   listIcons,
   MAX_SVG_BYTES,
   planUpload,
@@ -35,26 +34,17 @@ const rollupBin = path.join(projectRoot, "node_modules", "rollup", "dist", "bin"
 
 // Single requests carry one SVG; batch uploads carry many. JSON escaping can
 // roughly double the SVG size, so allow some headroom. The UI splits large
-// uploads into batches well below MAX_BATCH_BYTES.
+// uploads into batches below these limits (see BATCH_MAX_* in ui/public/app.js).
 const MAX_SINGLE_BYTES = MAX_SVG_BYTES * 3;
-const MAX_BATCH_BYTES = 32 * 1024 * 1024;
-const MAX_BATCH_FILES = 500;
+const MAX_UPLOAD = { maxBytes: 32 * 1024 * 1024, maxFiles: 500 };
 // Deleting only sends file names, so all icons fit into one request.
-const MAX_DELETE_FILES = 20000;
+const MAX_DELETE = { maxBytes: MAX_SINGLE_BYTES, maxFiles: 20000 };
 
 const STATIC_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
-  ".svg": "image/svg+xml",
 };
-
-class HttpError extends Error {
-  constructor(status, message) {
-    super(message);
-    this.status = status;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -76,7 +66,7 @@ function readJsonBody(req, maxBytes = MAX_SINGLE_BYTES) {
     req.on("data", (chunk) => {
       size += chunk.length;
       if (size > maxBytes) {
-        reject(new HttpError(413, "Request is too large."));
+        reject(new UserError("Request is too large.", 413));
         req.destroy();
         return;
       }
@@ -86,56 +76,31 @@ function readJsonBody(req, maxBytes = MAX_SINGLE_BYTES) {
       try {
         resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {});
       } catch {
-        reject(new HttpError(400, "Invalid JSON."));
+        reject(new UserError("Invalid JSON."));
       }
     });
     req.on("error", reject);
   });
 }
 
-function readConfigFile() {
-  return fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, "utf8")) : {};
+/** Reads `{ files: [...] }` and checks the list and its length. */
+async function readFileList(req, { maxBytes, maxFiles }) {
+  const { files } = await readJsonBody(req, maxBytes);
+  if (!Array.isArray(files)) throw new UserError('"files" must be a list.');
+  if (files.length > maxFiles) throw new UserError(`Please send at most ${maxFiles} files per request.`, 413);
+  return files;
 }
-
-/** Saved settings plus all derived values; derived values are null while no valid domain is set. */
-function companyInfo() {
-  const config = readConfigFile();
-  const companyDomain = String(config.companyDomain ?? "").trim();
-  const displayName = String(config.displayName ?? "").trim();
-  let derived = { companyName: null, companySlug: null, namespace: null };
-  try {
-    derived = deriveCompany({ companyDomain, displayName });
-  } catch {
-    // No valid domain yet; the UI asks the user to enter one.
-  }
-  return {
-    companyDomain: derived.companyDomain ?? companyDomain,
-    displayName,
-    companyName: derived.companyName,
-    companySlug: derived.companySlug,
-    namespace: derived.namespace,
-    version: readPackageVersion(),
-    outputFile: derived.companySlug ? outputFileName(derived.companySlug) : null,
-  };
-}
-
-function companyFromBody(body) {
-  return { companyDomain: body.companyDomain, displayName: body.displayName };
-}
-
-// ---------------------------------------------------------------------------
-// Keep src/icons.tsx in sync with src/svg
 
 /**
- * Called after every request that adds, renames or deletes SVG files, so
- * src/icons.tsx never imports files that no longer exist. Replacing the
- * content of an icon does not change icons.tsx.
+ * Keeps src/icons.tsx in sync with src/svg, so it never imports files that no
+ * longer exist. Runs after every request that may change icons and at startup.
+ * It only writes when the content changes. The build regenerates it as well.
  */
 function syncIconsFile() {
   try {
     generateIconsFile({ allowEmpty: true });
   } catch (error) {
-    // Should not happen (the UI prevents duplicate icon names); the build reports it again.
+    // Only happens with two files that result in the same icon name; the build reports it as well.
     console.error(`Could not update src/icons.tsx: ${error.message}`);
   }
 }
@@ -145,6 +110,7 @@ function syncIconsFile() {
 
 let buildRunning = false;
 
+/** Runs rollup (which also regenerates src/icons.tsx) and returns its exit code and output. */
 function runRollup() {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [rollupBin, "--config", "rollup.config.mjs"], {
@@ -160,23 +126,16 @@ function runRollup() {
 }
 
 async function build() {
-  if (buildRunning) throw new HttpError(409, "A build is already running.");
+  if (buildRunning) throw new UserError("A build is already running.", 409);
   if (!fs.existsSync(rollupBin)) {
-    throw new HttpError(500, 'Rollup not found. Please run "npm install" first.');
+    throw new UserError('Rollup not found. Please run "npm install" first.', 500);
   }
+  const outputFile = outputFileName(readCompanyConfig().companySlug);
   buildRunning = true;
-  const started = Date.now();
   try {
-    const info = companyInfo();
-    if (!info.companySlug) throw new HttpError(400, "Please set the company domain first.");
-
-    const count = generateIconsFile();
     const { code, log } = await runRollup();
-    // Strip any remaining ANSI escape sequences.
-    // eslint-disable-next-line no-control-regex
-    const cleanLog = `Generated src/icons.tsx with ${count} icon(s).\n${log}`.replace(/\x1b\[[0-9;]*m/g, "");
-    const ok = code === 0 && fs.existsSync(path.join(projectRoot, info.outputFile));
-    return { ok, log: cleanLog.trim(), outputFile: ok ? info.outputFile : null, durationMs: Date.now() - started };
+    const ok = code === 0 && fs.existsSync(path.join(projectRoot, outputFile));
+    return { ok, log: stripVTControlCharacters(log).trim(), outputFile: ok ? outputFile : null };
   } finally {
     buildRunning = false;
   }
@@ -184,15 +143,6 @@ async function build() {
 
 // ---------------------------------------------------------------------------
 // Routing
-
-async function readBatch(req) {
-  const body = await readJsonBody(req, MAX_BATCH_BYTES);
-  if (!Array.isArray(body.files)) throw new HttpError(400, '"files" must be a list.');
-  if (body.files.length > MAX_BATCH_FILES) {
-    throw new HttpError(413, `Please upload at most ${MAX_BATCH_FILES} files per request.`);
-  }
-  return body.files;
-}
 
 async function handleApi(req, res, url) {
   const { pathname } = url;
@@ -203,66 +153,37 @@ async function handleApi(req, res, url) {
     // which this server never answers, so other websites cannot write here.
     const type = req.headers["content-type"] ?? "";
     if (!type.startsWith("application/json")) {
-      throw new HttpError(415, "Content-Type must be application/json.");
+      throw new UserError("Content-Type must be application/json.", 415);
     }
   }
 
   if (pathname === "/api/company") {
-    if (method === "GET") return send(res, 200, companyInfo());
+    if (method === "GET") return send(res, 200, readSavedCompany());
     if (method === "PUT") {
-      const body = await readJsonBody(req);
-      try {
-        writeCompanyConfig(companyFromBody(body));
-      } catch (error) {
-        throw new HttpError(400, error.message);
-      }
-      return send(res, 200, companyInfo());
+      writeCompanyConfig(await readJsonBody(req));
+      return send(res, 200, readSavedCompany());
     }
   }
 
-  // Derived values for a name without saving it, so the UI can show what a
-  // change would do before the user confirms it.
+  // Derived values without saving them, so the UI can show what a change
+  // would do before the user confirms it.
   if (pathname === "/api/company/preview" && method === "POST") {
-    const body = await readJsonBody(req);
-    let derived;
-    try {
-      derived = deriveCompany(companyFromBody(body));
-    } catch (error) {
-      throw new HttpError(400, error.message);
-    }
-    return send(res, 200, { ...derived, outputFile: outputFileName(derived.companySlug) });
+    return send(res, 200, describeCompany(await readJsonBody(req)));
   }
 
-  if (pathname === "/api/icons") {
-    if (method === "GET") return send(res, 200, listIcons());
-    if (method === "POST") {
-      const body = await readJsonBody(req);
-      const entry = addIcon(body.name, body.svg);
-      syncIconsFile();
-      return send(res, 201, entry);
-    }
-  }
+  if (pathname === "/api/icons" && method === "GET") return send(res, 200, listIcons());
 
   // Batch upload in two steps: "plan" shows what would happen (new, replace,
   // unchanged, error) without writing; "upload" applies it.
   if (pathname === "/api/icons/plan" && method === "POST") {
-    const results = planUpload(await readBatch(req)).map(({ content: _content, ...result }) => result);
+    const results = planUpload(await readFileList(req, MAX_UPLOAD)).map(({ content: _content, ...result }) => result);
     return send(res, 200, { results });
   }
   if (pathname === "/api/icons/upload" && method === "POST") {
-    const results = applyUpload(await readBatch(req));
-    syncIconsFile();
-    return send(res, 200, { results });
+    return send(res, 200, { results: applyUpload(await readFileList(req, MAX_UPLOAD)) });
   }
   if (pathname === "/api/icons/delete" && method === "POST") {
-    const { files } = await readJsonBody(req);
-    if (!Array.isArray(files)) throw new HttpError(400, '"files" must be a list.');
-    if (files.length > MAX_DELETE_FILES) {
-      throw new HttpError(413, `Please delete at most ${MAX_DELETE_FILES} icons at once.`);
-    }
-    const results = deleteIcons(files);
-    syncIconsFile();
-    return send(res, 200, { results });
+    return send(res, 200, { results: deleteIcons(await readFileList(req, MAX_DELETE)) });
   }
 
   const iconMatch = pathname.match(/^\/api\/icons\/([^/]+)$/);
@@ -271,7 +192,7 @@ async function handleApi(req, res, url) {
     try {
       fileName = decodeURIComponent(iconMatch[1]);
     } catch {
-      throw new HttpError(400, "Invalid file name.");
+      throw new UserError("Invalid file name.");
     }
     if (method === "GET") {
       // The UI adds ?v=<version>, which changes whenever the file changes, so
@@ -279,29 +200,16 @@ async function handleApi(req, res, url) {
       const cache = url.searchParams.has("v") ? "private, max-age=31536000, immutable" : "no-store";
       return send(res, 200, readIcon(fileName), "image/svg+xml", cache);
     }
-    if (method === "PUT") {
-      const body = await readJsonBody(req);
-      return send(res, 200, replaceIcon(fileName, body.svg));
-    }
-    if (method === "PATCH") {
-      const body = await readJsonBody(req);
-      const entry = renameIcon(fileName, body.name);
-      syncIconsFile();
-      return send(res, 200, entry);
-    }
-    if (method === "DELETE") {
-      deleteIcon(fileName);
-      syncIconsFile();
-      return send(res, 200, { deleted: fileName });
-    }
+    if (method === "PUT") return send(res, 200, replaceIcon(fileName, (await readJsonBody(req)).svg));
+    if (method === "PATCH") return send(res, 200, renameIcon(fileName, (await readJsonBody(req)).name));
   }
 
   if (pathname === "/api/build" && method === "POST") {
-    const result = await build();
-    return send(res, result.ok ? 200 : 500, result);
+    // Always 200: a failed build is a normal result; `ok` and `log` describe it.
+    return send(res, 200, await build());
   }
 
-  throw new HttpError(404, "Not found.");
+  throw new UserError("Not found.", 404);
 }
 
 function serveStatic(res, pathname) {
@@ -321,20 +229,24 @@ function isAllowedHost(hostHeader) {
 }
 
 const server = http.createServer(async (req, res) => {
+  let changesIcons = false;
   try {
-    if (!isAllowedHost(req.headers.host)) throw new HttpError(403, "Forbidden host.");
+    if (!isAllowedHost(req.headers.host)) throw new UserError("Forbidden host.", 403);
     const url = new URL(req.url, `http://${req.headers.host}`);
+    changesIcons = req.method !== "GET" && url.pathname.startsWith("/api/icons");
     if (url.pathname.startsWith("/api/")) {
       await handleApi(req, res, url);
     } else if (req.method === "GET") {
       serveStatic(res, url.pathname);
     } else {
-      throw new HttpError(405, "Method not allowed.");
+      throw new UserError("Method not allowed.", 405);
     }
   } catch (error) {
-    const status = error instanceof HttpError || error instanceof IconError ? error.status : 500;
+    const status = error instanceof UserError ? error.status : 500;
     if (status === 500) console.error(error);
     if (!res.headersSent) send(res, status, { error: error.message });
+  } finally {
+    if (changesIcons) syncIconsFile();
   }
 });
 

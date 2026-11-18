@@ -14,8 +14,7 @@
   --accent-bg: #e3edfd;
   --warning-bg: #fff4d6;
   --warning-text: #7a5300;
-  --preview-bg: #eef1f5;
-  --code-bg: #eef1f5;
+  --subtle-bg: #eef1f5;
   --focus: #1f6feb55;
 }
 
@@ -36,8 +35,7 @@
     --accent-bg: #1a2a45;
     --warning-bg: #3b3017;
     --warning-text: #f2c96b;
-    --preview-bg: #262a32;
-    --code-bg: #262a32;
+    --subtle-bg: #262a32;
     --focus: #4c8dff66;
   }
 }
@@ -97,7 +95,7 @@ h2 {
 }
 
 code {
-  background: var(--code-bg);
+  background: var(--subtle-bg);
   border-radius: 4px;
   padding: 1px 5px;
   font-size: 0.9em;
@@ -122,13 +120,17 @@ code {
   font-weight: 600;
 }
 
-input {
+input,
+select {
   font: inherit;
   color: inherit;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 7px 10px;
+}
+
+input {
   width: 100%;
 }
 
@@ -171,12 +173,20 @@ button:disabled {
   cursor: not-allowed;
 }
 
-.danger-link {
+.danger-link,
+.link-button {
   border: none;
   background: none;
-  color: var(--danger);
   padding: 2px 4px;
   font-size: 13px;
+}
+
+.danger-link {
+  color: var(--danger);
+}
+
+.link-button {
+  color: var(--accent);
 }
 
 .status {
@@ -253,15 +263,6 @@ button:disabled {
   width: 200px;
 }
 
-select {
-  font: inherit;
-  color: inherit;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 7px 8px;
-}
-
 @media (max-width: 640px) {
   /* On small screens a sticky toolbar would take too much space. */
   .icons-toolbar {
@@ -300,7 +301,7 @@ select {
 
 .drop-zone.active {
   border-color: var(--accent);
-  background: var(--preview-bg);
+  background: var(--subtle-bg);
 }
 
 .icon-grid {
@@ -354,13 +355,40 @@ select {
   overflow-wrap: anywhere;
 }
 
-.badge {
-  background: var(--warning-bg);
-  color: var(--warning-text);
+/* Pills: badges on cards and chips in the upload review share shape and colors. */
+.badge,
+.chip {
   border-radius: 999px;
+  white-space: nowrap;
+}
+
+.badge {
   padding: 1px 8px;
   font-size: 12px;
-  white-space: nowrap;
+}
+
+.chip {
+  padding: 2px 10px;
+  font-size: 13px;
+  background: var(--subtle-bg);
+}
+
+.badge,
+.chip-error {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.badge-new,
+.chip-add {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.badge-updated,
+.chip-replace {
+  background: var(--accent-bg);
+  color: var(--accent);
 }
 
 /* Checkbox in the top-left corner of the preview; the whole corner is clickable. */
@@ -407,29 +435,11 @@ select {
   margin-left: auto;
 }
 
-.badge-new {
-  background: var(--success-bg);
-  color: var(--success);
-}
-
-.badge-updated {
-  background: var(--accent-bg);
-  color: var(--accent);
-}
-
 .card-actions {
   display: flex;
   justify-content: space-between;
   gap: 8px;
   margin-top: auto;
-}
-
-.link-button {
-  border: none;
-  background: none;
-  color: var(--accent);
-  padding: 2px 4px;
-  font-size: 13px;
 }
 
 .show-more {
@@ -448,7 +458,7 @@ details {
 }
 
 pre {
-  background: var(--code-bg);
+  background: var(--subtle-bg);
   border-radius: 6px;
   padding: 12px;
   overflow-x: auto;
@@ -525,9 +535,9 @@ button.danger {
   margin-top: 16px;
 }
 
-/* Upload review dialog */
+/* Dialogs with lists (upload review, delete) */
 
-.upload-dialog {
+.list-dialog {
   width: min(640px, calc(100vw - 32px));
 }
 
@@ -540,41 +550,20 @@ button.danger {
   margin: 0 0 12px;
 }
 
-.chip {
-  border-radius: 999px;
-  padding: 2px 10px;
-  font-size: 13px;
-  background: var(--preview-bg);
-}
 
-.chip-replace {
-  background: var(--accent-bg);
-  color: var(--accent);
-}
-
-.chip-add {
-  background: var(--success-bg);
-  color: var(--success);
-}
-
-.chip-error {
-  background: var(--warning-bg);
-  color: var(--warning-text);
-}
-
-.upload-group {
+.list-group {
   border: 1px solid var(--border);
   border-radius: 8px;
   margin: 0 0 8px;
 }
 
-.upload-group summary {
+.list-group summary {
   cursor: pointer;
   padding: 8px 12px;
   font-weight: 600;
 }
 
-.upload-group ul {
+.list-group ul {
   margin: 0;
   padding: 4px 12px 10px 32px;
   /* Long lists scroll inside the group instead of growing the dialog. */
