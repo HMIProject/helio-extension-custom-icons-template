@@ -132,12 +132,96 @@ export function usesCurrentColor(svgText) {
   return /currentColor/i.test(svgText);
 }
 
+/**
+ * Lists all icons. `version` changes whenever the file changes, so clients can
+ * use it to cache previews and reload only icons that were replaced.
+ */
 export function listIcons(svgDir = defaultSvgDir) {
   return svgFileNames(svgDir).map((fileName) => {
-    const svg = fs.readFileSync(path.join(svgDir, fileName), "utf8");
+    const filePath = path.join(svgDir, fileName);
+    const svg = fs.readFileSync(filePath, "utf8");
     const { componentName, ...entry } = toEntry(fileName);
-    return { ...entry, usesCurrentColor: usesCurrentColor(svg) };
+    const version = `${Math.round(fs.statSync(filePath).mtimeMs)}-${svg.length}`;
+    return { ...entry, usesCurrentColor: usesCurrentColor(svg), version };
   });
+}
+
+/** "my icon (1).svg" -> "my icon -1-" -> "my icon -1": only characters allowed in icon names. */
+export function nameFromFileName(fileName) {
+  const base = path.basename(String(fileName ?? "")).replace(/\.svg$/i, "");
+  return base.replace(/[^A-Za-z0-9 _-]+/g, "-").replace(/^-+|-+$/g, "") || "icon";
+}
+
+/** Writes via a temporary file so an interrupted write never leaves a half-written SVG. */
+function writeFileAtomic(filePath, content) {
+  const tmpPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.tmp`);
+  fs.writeFileSync(tmpPath, content, "utf8");
+  fs.renameSync(tmpPath, filePath);
+}
+
+/**
+ * Decides for each uploaded file what would happen, without writing anything:
+ * - "add":       no icon with this name exists yet
+ * - "replace":   an icon with the same name exists and its content differs
+ *                (the existing file name is kept, so HELIO references stay valid)
+ * - "unchanged": an icon with the same name and identical content exists
+ * - "error":     the file is invalid; `error` says why
+ *
+ * Names are matched by their icon name, so "lock.svg" replaces "Lock.svg".
+ * `files` is a list of `{ name, svg }` where `name` is the uploaded file name.
+ */
+export function planUpload(files, svgDir = defaultSvgDir) {
+  const existing = new Map(svgFileNames(svgDir).map((fileName) => [toEntry(fileName).iconName, fileName]));
+  const seen = new Map();
+
+  return (Array.isArray(files) ? files : []).map(({ name, svg } = {}) => {
+    const source = String(name ?? "");
+    try {
+      const validName = validateName(nameFromFileName(source));
+      const content = ensureSvgNamespace(validateSvg(svg));
+      const iconName = toPascalCase(validName);
+      if (seen.has(iconName)) {
+        throw new IconError(`"${seen.get(iconName)}" in this upload already results in the icon name "${iconName}".`);
+      }
+      seen.set(iconName, source);
+
+      const target = existing.get(iconName);
+      if (!target) return { source, action: "add", fileName: `${validName}.svg`, iconName, content };
+      const current = fs.readFileSync(path.join(svgDir, target), "utf8");
+      return { source, action: current === content ? "unchanged" : "replace", fileName: target, iconName, content };
+    } catch (error) {
+      if (!(error instanceof IconError)) throw error;
+      return { source, action: "error", error: error.message };
+    }
+  });
+}
+
+/** Applies an upload as described by planUpload and returns the results (without file contents). */
+export function applyUpload(files, svgDir = defaultSvgDir) {
+  const plan = planUpload(files, svgDir);
+  fs.mkdirSync(svgDir, { recursive: true });
+  return plan.map(({ content, ...result }) => {
+    try {
+      if (result.action === "add") {
+        fs.writeFileSync(path.join(svgDir, result.fileName), content, { encoding: "utf8", flag: "wx" });
+      } else if (result.action === "replace") {
+        writeFileAtomic(path.join(svgDir, result.fileName), content);
+      }
+      return result;
+    } catch (error) {
+      return { source: result.source, action: "error", error: error.message };
+    }
+  });
+}
+
+/** Replaces the content of an existing icon; its name stays the same. */
+export function replaceIcon(fileName, svgText, svgDir = defaultSvgDir) {
+  const filePath = resolveExisting(svgDir, fileName);
+  const content = ensureSvgNamespace(validateSvg(svgText));
+  const changed = fs.readFileSync(filePath, "utf8") !== content;
+  if (changed) writeFileAtomic(filePath, content);
+  const { componentName, ...entry } = toEntry(fileName);
+  return { ...entry, changed };
 }
 
 export function readIcon(fileName, svgDir = defaultSvgDir) {
@@ -158,6 +242,19 @@ export function deleteIcon(fileName, svgDir = defaultSvgDir) {
   fs.unlinkSync(resolveExisting(svgDir, fileName));
 }
 
+/** Deletes several icons; one invalid or missing file does not stop the others. */
+export function deleteIcons(fileNames, svgDir = defaultSvgDir) {
+  return (Array.isArray(fileNames) ? fileNames : []).map((fileName) => {
+    try {
+      deleteIcon(fileName, svgDir);
+      return { fileName, deleted: true };
+    } catch (error) {
+      if (!(error instanceof IconError)) throw error;
+      return { fileName, deleted: false, error: error.message };
+    }
+  });
+}
+
 export function renameIcon(fileName, newName, svgDir = defaultSvgDir) {
   const from = resolveExisting(svgDir, fileName);
   const validName = validateName(newName);
@@ -170,6 +267,14 @@ export function renameIcon(fileName, newName, svgDir = defaultSvgDir) {
 
 /** Returns the content of src/icons.tsx for the given SVG files. */
 export function renderIconsFile(fileNames) {
+  if (fileNames.length === 0) {
+    return `import type { CreateIconResult } from "@hmiproject/helio-sdk";
+
+// No icons yet: add SVG files to src/svg or upload them in the web interface (npm run ui).
+export const icons: CreateIconResult[] = [];
+`;
+  }
+
   const iconEntries = fileNames.map(toEntry);
 
   const imports = iconEntries
@@ -198,13 +303,18 @@ export const icons = [
 `;
 }
 
-/** Regenerates src/icons.tsx from the SVG files. Returns the number of icons. */
-export function generateIconsFile({ svgDir = defaultSvgDir, iconsFile = defaultIconsFile } = {}) {
-  if (!fs.existsSync(svgDir)) {
+/**
+ * Regenerates src/icons.tsx from the SVG files. Returns the number of icons.
+ * The build needs at least one icon; `allowEmpty` writes an empty icon list
+ * instead, so the file never points to deleted SVGs. The file is only written
+ * when its content changes.
+ */
+export function generateIconsFile({ svgDir = defaultSvgDir, iconsFile = defaultIconsFile, allowEmpty = false } = {}) {
+  if (!fs.existsSync(svgDir) && !allowEmpty) {
     throw new IconError(`SVG directory not found: ${svgDir}`);
   }
   const fileNames = svgFileNames(svgDir);
-  if (fileNames.length === 0) {
+  if (fileNames.length === 0 && !allowEmpty) {
     throw new IconError(`No SVG files found in: ${svgDir}`);
   }
   const names = new Map();
@@ -215,6 +325,9 @@ export function generateIconsFile({ svgDir = defaultSvgDir, iconsFile = defaultI
     }
     names.set(iconName, fileName);
   }
-  fs.writeFileSync(iconsFile, renderIconsFile(fileNames), "utf8");
+  const content = renderIconsFile(fileNames);
+  if (!fs.existsSync(iconsFile) || fs.readFileSync(iconsFile, "utf8") !== content) {
+    fs.writeFileSync(iconsFile, content, "utf8");
+  }
   return fileNames.length;
 }

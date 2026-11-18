@@ -38,25 +38,6 @@
         </dl>
       </section>
 
-      <section class="card" aria-labelledby="icons-title">
-        <div class="section-header">
-          <h2 id="icons-title">Icons <span id="icon-count" class="count"></span></h2>
-          <label class="button primary">
-            Upload SVGs
-            <input id="file-input" type="file" accept=".svg,image/svg+xml" multiple hidden />
-          </label>
-        </div>
-        <div id="drop-zone" class="drop-zone">
-          <p>Drop SVG files here or choose them with “Upload SVGs”.</p>
-          <p class="muted small">
-            Tip: <code>fill="currentColor"</code> lets HELIO handle the correct color.
-          </p>
-        </div>
-        <p id="icons-status" class="status" role="status"></p>
-        <ul id="icon-grid" class="icon-grid"></ul>
-        <p id="icons-empty" class="muted" hidden>No icons yet.</p>
-      </section>
-
       <section class="card" aria-labelledby="build-title">
         <h2 id="build-title">Build extension</h2>
         <p class="muted">
@@ -71,6 +52,55 @@
           <summary>Build log</summary>
           <pre id="build-log"></pre>
         </details>
+      </section>
+
+      <section class="card icons-card" aria-labelledby="icons-title">
+        <div class="icons-toolbar">
+          <h2 id="icons-title">Icons <span id="icon-count" class="count"></span></h2>
+          <div class="toolbar-controls">
+            <input id="icon-search" type="search" placeholder="Search icons" aria-label="Search icons" spellcheck="false" autocomplete="off" />
+            <select id="icon-filter" aria-label="Filter icons">
+              <option value="all">All icons</option>
+              <option value="changed">Changed in last upload</option>
+              <option value="fixed">Fixed color only</option>
+            </select>
+            <label class="button primary upload-button">
+              Upload SVGs
+              <input id="file-input" class="upload-input" type="file" accept=".svg,image/svg+xml" multiple hidden />
+            </label>
+            <label class="button upload-button">
+              Upload folder
+              <input id="folder-input" class="upload-input" type="file" webkitdirectory multiple hidden />
+            </label>
+          </div>
+          <div id="selection-bar" class="selection-bar" hidden>
+            <label class="select-all">
+              <input id="select-all" type="checkbox" />
+              <span id="select-all-label">Select all</span>
+            </label>
+            <span id="selection-info" class="muted small" aria-live="polite"></span>
+            <button id="clear-selection" type="button" class="link-button" hidden>Clear selection</button>
+            <button id="delete-selected" type="button" class="danger" disabled>Delete selected</button>
+          </div>
+        </div>
+        <div id="drop-zone" class="drop-zone">
+          <p>
+            Drop SVG files or a folder here. Icons with the same name are <strong>replaced</strong>,
+            new ones are added. You can review the changes before they are saved.
+          </p>
+          <p class="muted small">
+            Tip: <code>fill="currentColor"</code> lets HELIO handle the correct color.
+          </p>
+        </div>
+        <p id="icons-status" class="status" role="status" aria-live="polite"></p>
+        <ul id="icon-grid" class="icon-grid"></ul>
+        <p id="icons-empty" class="muted" hidden>No icons yet.</p>
+        <p id="icons-no-match" class="muted" hidden>No icons match your search.</p>
+        <div id="show-more-wrapper" class="show-more" hidden>
+          <span id="show-more-info" class="muted small"></span>
+          <button id="show-more" type="button">Show more</button>
+        </div>
+        <input id="replace-input" type="file" accept=".svg,image/svg+xml" hidden />
       </section>
     </main>
 
@@ -106,17 +136,61 @@
       </form>
     </dialog>
 
+    <dialog id="upload-dialog" class="dialog upload-dialog" aria-labelledby="upload-dialog-title">
+      <form method="dialog">
+        <h2 id="upload-dialog-title">Review upload</h2>
+        <p id="upload-summary"></p>
+        <ul id="upload-chips" class="chips"></ul>
+        <div id="upload-groups"></div>
+        <p class="muted small" id="upload-replace-note">
+          Replaced icons keep their name, so HELIO projects that already use them keep working and show the new
+          version after you rebuild and load the extension.
+        </p>
+        <div class="dialog-actions">
+          <button value="cancel" autofocus>Cancel</button>
+          <button id="upload-confirm" value="confirm" class="primary">Save changes</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="delete-dialog" class="dialog upload-dialog" aria-labelledby="delete-dialog-title">
+      <form method="dialog">
+        <h2 id="delete-dialog-title">Delete icons?</h2>
+        <div class="warning-box">
+          <p>
+            HELIO projects that already use these icons will <strong>no longer find them</strong> after the next build.
+            The files are removed from <code>src/svg/</code>; you can only get them back from version control or by uploading them again.
+          </p>
+        </div>
+        <details class="upload-group" open>
+          <summary id="delete-list-summary"></summary>
+          <ul id="delete-list"></ul>
+        </details>
+        <div class="dialog-actions">
+          <button value="cancel" autofocus>Cancel</button>
+          <button id="delete-confirm" value="confirm" class="danger">Delete</button>
+        </div>
+      </form>
+    </dialog>
+
     <template id="icon-template">
       <li class="icon-card">
-        <div class="icon-preview"><img alt="" /></div>
+        <div class="icon-preview">
+          <label class="select-box"><input type="checkbox" class="select-icon" /></label>
+          <img alt="" width="48" height="48" loading="lazy" decoding="async" />
+        </div>
         <form class="rename-form">
           <input class="icon-name" aria-label="Icon name" maxlength="100" spellcheck="false" />
         </form>
         <div class="icon-meta">
           <span class="muted small helio-name"></span>
-          <span class="badge" hidden title="This SVG does not use currentColor, so it will not take on the text color in HELIO.">fixed color</span>
+          <span class="badge change-badge" hidden></span>
+          <span class="badge fixed-badge" hidden title="This SVG does not use currentColor, so it will not take on the text color in HELIO.">fixed color</span>
         </div>
-        <button type="button" class="delete danger-link">Delete</button>
+        <div class="card-actions">
+          <button type="button" class="replace link-button" title="Upload a new version of this icon. The name stays the same.">Replace…</button>
+          <button type="button" class="delete danger-link">Delete</button>
+        </div>
       </li>
     </template>
 

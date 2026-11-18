@@ -37,11 +37,17 @@ Instead of using the command line you can manage everything in the browser:
 npm run ui
 ```
 Then open http://localhost:5178 (use `PORT=5179 npm run ui` for a different port). The interface lets you
-- upload new SVG icons (file picker or drag & drop), rename and delete them,
+- upload SVG icons (files, a whole folder, or drag & drop), rename and delete them,
+- update icons by simply uploading the changed SVGs again: files with the name of an existing icon replace it
+  (matched by icon name, so `lock.svg` replaces `Lock.svg`). Before anything is saved you get an overview of
+  which icons are new, replaced, unchanged or invalid. A single icon can also be replaced with “Replace…” on its card,
+- search and filter the list, e.g. to review only the icons changed by the last upload,
+- select several icons (checkboxes, Shift-click for a range, or “Select all” for everything that matches the
+  current search and filter) and delete them in one go,
 - set the company domain and display name,
 - build the extension. The result is written to the `lib` folder.
 
 The interface only runs on your own computer (it listens on `127.0.0.1`) and works directly on the files in this repository:
 icons are stored in `src/svg`, the company settings in `company.config.json`. Commit these changes like any other change.
 
-Note: HELIO references icons by their name. Renaming or deleting an icon that is already used in a HELIO project breaks that reference.
+Note: HELIO references icons by their name. Replacing an icon keeps its name, so HELIO projects that use it show the new version after the next build. Renaming or deleting an icon that is already used in a HELIO project breaks that reference.

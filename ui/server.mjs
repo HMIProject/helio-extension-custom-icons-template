@@ -15,19 +15,32 @@ import {
 } from "../scripts/company.mjs";
 import {
   addIcon,
+  applyUpload,
   deleteIcon,
+  deleteIcons,
   generateIconsFile,
   IconError,
   listIcons,
   MAX_SVG_BYTES,
+  planUpload,
   readIcon,
   renameIcon,
+  replaceIcon,
 } from "../scripts/icons.mjs";
 
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.PORT) || 5178;
 const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "public");
 const rollupBin = path.join(projectRoot, "node_modules", "rollup", "dist", "bin", "rollup");
+
+// Single requests carry one SVG; batch uploads carry many. JSON escaping can
+// roughly double the SVG size, so allow some headroom. The UI splits large
+// uploads into batches well below MAX_BATCH_BYTES.
+const MAX_SINGLE_BYTES = MAX_SVG_BYTES * 3;
+const MAX_BATCH_BYTES = 32 * 1024 * 1024;
+const MAX_BATCH_FILES = 500;
+// Deleting only sends file names, so all icons fit into one request.
+const MAX_DELETE_FILES = 20000;
 
 const STATIC_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -46,24 +59,23 @@ class HttpError extends Error {
 // ---------------------------------------------------------------------------
 // Helpers
 
-function send(res, status, body, type = "application/json; charset=utf-8") {
+function send(res, status, body, type = "application/json; charset=utf-8", cacheControl = "no-store") {
   const payload = typeof body === "string" || Buffer.isBuffer(body) ? body : JSON.stringify(body);
   res.writeHead(status, {
     "Content-Type": type,
-    "Cache-Control": "no-store",
+    "Cache-Control": cacheControl,
     "X-Content-Type-Options": "nosniff",
   });
   res.end(payload);
 }
 
-function readJsonBody(req) {
+function readJsonBody(req, maxBytes = MAX_SINGLE_BYTES) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
     req.on("data", (chunk) => {
       size += chunk.length;
-      // JSON escaping can roughly double the SVG size; allow some headroom.
-      if (size > MAX_SVG_BYTES * 3) {
+      if (size > maxBytes) {
         reject(new HttpError(413, "Request is too large."));
         req.destroy();
         return;
@@ -112,6 +124,23 @@ function companyFromBody(body) {
 }
 
 // ---------------------------------------------------------------------------
+// Keep src/icons.tsx in sync with src/svg
+
+/**
+ * Called after every request that adds, renames or deletes SVG files, so
+ * src/icons.tsx never imports files that no longer exist. Replacing the
+ * content of an icon does not change icons.tsx.
+ */
+function syncIconsFile() {
+  try {
+    generateIconsFile({ allowEmpty: true });
+  } catch (error) {
+    // Should not happen (the UI prevents duplicate icon names); the build reports it again.
+    console.error(`Could not update src/icons.tsx: ${error.message}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Build
 
 let buildRunning = false;
@@ -156,7 +185,17 @@ async function build() {
 // ---------------------------------------------------------------------------
 // Routing
 
-async function handleApi(req, res, pathname) {
+async function readBatch(req) {
+  const body = await readJsonBody(req, MAX_BATCH_BYTES);
+  if (!Array.isArray(body.files)) throw new HttpError(400, '"files" must be a list.');
+  if (body.files.length > MAX_BATCH_FILES) {
+    throw new HttpError(413, `Please upload at most ${MAX_BATCH_FILES} files per request.`);
+  }
+  return body.files;
+}
+
+async function handleApi(req, res, url) {
+  const { pathname } = url;
   const method = req.method;
 
   if (method !== "GET" && method !== "HEAD") {
@@ -199,8 +238,31 @@ async function handleApi(req, res, pathname) {
     if (method === "POST") {
       const body = await readJsonBody(req);
       const entry = addIcon(body.name, body.svg);
+      syncIconsFile();
       return send(res, 201, entry);
     }
+  }
+
+  // Batch upload in two steps: "plan" shows what would happen (new, replace,
+  // unchanged, error) without writing; "upload" applies it.
+  if (pathname === "/api/icons/plan" && method === "POST") {
+    const results = planUpload(await readBatch(req)).map(({ content: _content, ...result }) => result);
+    return send(res, 200, { results });
+  }
+  if (pathname === "/api/icons/upload" && method === "POST") {
+    const results = applyUpload(await readBatch(req));
+    syncIconsFile();
+    return send(res, 200, { results });
+  }
+  if (pathname === "/api/icons/delete" && method === "POST") {
+    const { files } = await readJsonBody(req);
+    if (!Array.isArray(files)) throw new HttpError(400, '"files" must be a list.');
+    if (files.length > MAX_DELETE_FILES) {
+      throw new HttpError(413, `Please delete at most ${MAX_DELETE_FILES} icons at once.`);
+    }
+    const results = deleteIcons(files);
+    syncIconsFile();
+    return send(res, 200, { results });
   }
 
   const iconMatch = pathname.match(/^\/api\/icons\/([^/]+)$/);
@@ -211,13 +273,25 @@ async function handleApi(req, res, pathname) {
     } catch {
       throw new HttpError(400, "Invalid file name.");
     }
-    if (method === "GET") return send(res, 200, readIcon(fileName), "image/svg+xml");
+    if (method === "GET") {
+      // The UI adds ?v=<version>, which changes whenever the file changes, so
+      // the browser can keep previews cached and only reloads replaced icons.
+      const cache = url.searchParams.has("v") ? "private, max-age=31536000, immutable" : "no-store";
+      return send(res, 200, readIcon(fileName), "image/svg+xml", cache);
+    }
+    if (method === "PUT") {
+      const body = await readJsonBody(req);
+      return send(res, 200, replaceIcon(fileName, body.svg));
+    }
     if (method === "PATCH") {
       const body = await readJsonBody(req);
-      return send(res, 200, renameIcon(fileName, body.name));
+      const entry = renameIcon(fileName, body.name);
+      syncIconsFile();
+      return send(res, 200, entry);
     }
     if (method === "DELETE") {
       deleteIcon(fileName);
+      syncIconsFile();
       return send(res, 200, { deleted: fileName });
     }
   }
@@ -249,11 +323,11 @@ function isAllowedHost(hostHeader) {
 const server = http.createServer(async (req, res) => {
   try {
     if (!isAllowedHost(req.headers.host)) throw new HttpError(403, "Forbidden host.");
-    const { pathname } = new URL(req.url, `http://${req.headers.host}`);
-    if (pathname.startsWith("/api/")) {
-      await handleApi(req, res, pathname);
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    if (url.pathname.startsWith("/api/")) {
+      await handleApi(req, res, url);
     } else if (req.method === "GET") {
-      serveStatic(res, pathname);
+      serveStatic(res, url.pathname);
     } else {
       throw new HttpError(405, "Method not allowed.");
     }
@@ -272,6 +346,9 @@ server.on("error", (error) => {
   }
   process.exit(1);
 });
+
+// Files may have been added or removed by hand while the server was stopped.
+syncIconsFile();
 
 server.listen(PORT, HOST, () => {
   console.log(`HELIO custom icons UI running at http://localhost:${PORT}`);
