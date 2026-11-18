@@ -1,8 +1,9 @@
 import { createNamespace } from '@hmiproject/helio-sdk';
-import { namespaceDomain } from './company';
+import { companyNamespace } from './company';
 
 export const namespace = createNamespace({
-  // `namespaceDomain` (set in company.config.json) should match your company's
-  // domain name in https://en.wikipedia.org/wiki/Reverse_domain_name_notation
-  name: `${namespaceDomain}.custom-icons`,
+  // The company domain in reverse domain notation
+  // (https://en.wikipedia.org/wiki/Reverse_domain_name_notation):
+  // "my-company.com" -> "com.my-company.custom-icons". See scripts/company.mjs.
+  name: companyNamespace,
 });

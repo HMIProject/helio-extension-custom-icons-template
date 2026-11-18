@@ -1,0 +1,579 @@
+:root {
+  color-scheme: light;
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --text: #1c1f24;
+  --muted: #5d6470;
+  --border: #d9dde3;
+  --accent: #1f6feb;
+  --accent-text: #ffffff;
+  --danger: #c62828;
+  --danger-text: #ffffff;
+  --success: #1b7f3b;
+  --success-bg: #e3f4e8;
+  --accent-bg: #e3edfd;
+  --warning-bg: #fff4d6;
+  --warning-text: #7a5300;
+  --subtle-bg: #eef1f5;
+  --focus: #1f6feb55;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #14161a;
+    --surface: #1d2026;
+    --text: #e6e8eb;
+    --muted: #9aa3ae;
+    --border: #343a44;
+    --accent: #4c8dff;
+    --accent-text: #0b0d10;
+    --danger: #ff6b6b;
+    --danger-text: #0b0d10;
+    --success: #4cc27a;
+    --success-bg: #183524;
+    --accent-bg: #1a2a45;
+    --warning-bg: #3b3017;
+    --warning-text: #f2c96b;
+    --subtle-bg: #262a32;
+    --focus: #4c8dff66;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Classes like .selection-bar set display: flex, which would otherwise override the hidden attribute. */
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.page-header,
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+.page-header {
+  padding-top: 32px;
+  padding-bottom: 8px;
+}
+
+h1 {
+  margin: 0 0 4px;
+  font-size: 24px;
+}
+
+h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  margin: 16px 0;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 13px;
+}
+
+code {
+  background: var(--subtle-bg);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+/* Forms */
+
+.company-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px 16px;
+}
+
+.company-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.company-form label > span {
+  font-weight: 600;
+}
+
+input,
+select {
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+}
+
+input {
+  width: 100%;
+}
+
+input:focus,
+button:focus-visible,
+.button:focus-within {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+button,
+.button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  padding: 7px 14px;
+}
+
+button.primary,
+.button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.danger-link,
+.link-button {
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  font-size: 13px;
+}
+
+.danger-link {
+  color: var(--danger);
+}
+
+.link-button {
+  color: var(--accent);
+}
+
+.status {
+  font-size: 14px;
+  min-height: 1.5em;
+}
+
+.status.error {
+  color: var(--danger);
+}
+
+.status.success {
+  color: var(--success);
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  margin: 16px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.summary dt {
+  color: var(--muted);
+}
+
+.summary dd {
+  margin: 0;
+  min-width: 0;
+}
+
+@media (max-width: 520px) {
+  .summary {
+    grid-template-columns: 1fr;
+  }
+  .summary dd {
+    margin-bottom: 8px;
+  }
+}
+
+/* Icons */
+
+/* Stays visible while scrolling through long icon lists. */
+.icons-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: -20px -20px 12px;
+  padding: 12px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  border-radius: 10px 10px 0 0;
+}
+
+.icons-toolbar h2 {
+  margin: 0;
+}
+
+.toolbar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar-controls input[type="search"] {
+  width: 200px;
+}
+
+@media (max-width: 640px) {
+  /* On small screens a sticky toolbar would take too much space. */
+  .icons-toolbar {
+    position: static;
+  }
+  .toolbar-controls,
+  .toolbar-controls input[type="search"] {
+    width: 100%;
+  }
+  .toolbar-controls select {
+    flex: 1;
+  }
+}
+
+.button.disabled,
+.drop-zone.disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.count {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+}
+
+.drop-zone p {
+  margin: 4px 0;
+}
+
+.drop-zone.active {
+  border-color: var(--accent);
+  background: var(--subtle-bg);
+}
+
+.icon-grid {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.icon-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  /* Lets the browser skip layout and painting of cards outside the viewport. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 230px;
+}
+
+/* Previews are loaded via <img> (so scripts inside SVGs never run), where
+   currentColor resolves to black. The tile stays light in both themes so the
+   icon is visible and fixed colors are shown as they really are. */
+.icon-preview {
+  position: relative;
+  background: #f3f4f6;
+  border-radius: 6px;
+  height: 88px;
+  display: grid;
+  place-items: center;
+}
+
+.icon-preview img {
+  width: 48px;
+  height: 48px;
+}
+
+.icon-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+}
+
+.helio-name {
+  overflow-wrap: anywhere;
+}
+
+/* Pills: badges on cards and chips in the upload review share shape and colors. */
+.badge,
+.chip {
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.badge {
+  padding: 1px 8px;
+  font-size: 12px;
+}
+
+.chip {
+  padding: 2px 10px;
+  font-size: 13px;
+  background: var(--subtle-bg);
+}
+
+.badge,
+.chip-error {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.badge-new,
+.chip-add {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.badge-updated,
+.chip-replace {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+/* Checkbox in the top-left corner of the preview; the whole corner is clickable. */
+.select-box {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 8px;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.select-box input,
+.select-all input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.icon-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.selection-bar {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  min-height: 36px;
+}
+
+.select-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+#delete-selected {
+  margin-left: auto;
+}
+
+.card-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.show-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+/* Build */
+
+details {
+  margin-top: 12px;
+}
+
+pre {
+  background: var(--subtle-bg);
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Confirmation dialog */
+
+button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+.dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.dialog::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}
+
+.dialog p {
+  margin: 0 0 12px;
+}
+
+.change-summary {
+  margin: 0 0 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.warning-box {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+}
+
+.warning-box p {
+  margin: 0 0 6px;
+}
+
+.warning-box ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.warning-box li + li {
+  margin-top: 6px;
+}
+
+.warning-box code {
+  background: transparent;
+  padding: 0;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+/* Dialogs with lists (upload review, delete) */
+
+.list-dialog {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0;
+  margin: 0 0 12px;
+}
+
+
+.list-group {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 0 0 8px;
+}
+
+.list-group summary {
+  cursor: pointer;
+  padding: 8px 12px;
+  font-weight: 600;
+}
+
+.list-group ul {
+  margin: 0;
+  padding: 4px 12px 10px 32px;
+  /* Long lists scroll inside the group instead of growing the dialog. */
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.group-error ul {
+  color: var(--warning-text);
+}

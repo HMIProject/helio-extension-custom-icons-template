@@ -12,27 +12,30 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
-      # This includes the cache to speed up `npm install` in the step below.
+      # This includes the cache to speed up `npm ci` in the step below.
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           cache: npm
           node-version-file: package.json
 
       - name: Install node_modules
-        run: npm install
+        run: npm ci
+
+      # e.g. helio-extension-icons-my-company-v1.2.3, derived from company.config.json
+      - name: Determine file name
+        id: name
+        run: echo "base=$(npm run get-name -s)-${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
 
       - name: Build Extension
-        run: npm run build -- -o lib/$(npm run get-name -s)-${{ github.ref_name }}.js
+        run: npm run build -- -o lib/${{ steps.name.outputs.base }}.js
 
       - name: Copy Static Assets
         run: cp CHANGELOG.md lib
 
       - name: Zip Extension
-        run: zip -9 lib/$(npm run get-name -s)-${{ github.ref_name }}.zip lib/*
+        run: zip -9 lib/${{ steps.name.outputs.base }}.zip lib/*
 
       - name: Publish to Releases
         uses: softprops/action-gh-release@v1

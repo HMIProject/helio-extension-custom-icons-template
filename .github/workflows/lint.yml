@@ -11,12 +11,9 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
-        with:
-          # The Chromatic action requires full access to the Git history.
-          fetch-depth: 0
+        uses: actions/checkout@v6
 
-      # This includes the cache to speed up `npm install` in the step below.
+      # This includes the cache to speed up `npm ci` in the step below.
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
@@ -24,7 +21,7 @@ jobs:
           node-version-file: package.json
 
       - name: Install node_modules
-        run: npm install
+        run: npm ci
 
       - name: Run ESLint
         run: npm run lint
